@@ -60,6 +60,50 @@ def load_json(filepath):
         return json.load(f)
 
 
+def extract_transcripts_from_pptx(pptx_path):
+    """
+    Extract transcripts from the notes section of each slide in a PowerPoint file.
+    
+    Args:
+        pptx_path (Path or str): Path to the PowerPoint file
+        
+    Returns:
+        list: A list of dictionaries containing slide number and transcript
+    """
+    pptx_path = Path(pptx_path)
+    
+    # Load the presentation
+    presentation = Presentation(pptx_path)
+    
+    # Extract transcripts from notes
+    transcripts = []
+    for i, slide in enumerate(presentation.slides, 1):
+        # Get the content from the slide
+        slide_content = []
+        for shape in slide.shapes:
+            if hasattr(shape, "text") and shape.text.strip():
+                slide_content.append(shape.text.strip())
+        
+        original_content = "\n".join(slide_content) if slide_content else ""
+        
+        # Get transcript from notes
+        transcript = ""
+        if slide.has_notes_slide:
+            notes_text = slide.notes_slide.notes_text_frame.text
+            if notes_text.strip():
+                transcript = notes_text.strip()
+        
+        slide_data = {
+            "slide_number": i,
+            "original_content": original_content,
+            "transcript": transcript
+        }
+        
+        transcripts.append(slide_data)
+    
+    return transcripts
+
+
 def write_transcripts_to_pptx(pptx_path, transcripts, output_dir=None):
     """
     Write transcripts back to the notes of each slide in the PPTX file.

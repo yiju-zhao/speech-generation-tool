@@ -6,7 +6,13 @@ import time
 import requests
 from pathlib import Path
 
-from .utils import load_config, ensure_directory, get_project_paths, load_json
+from .utils import (
+    load_config, 
+    ensure_directory, 
+    get_project_paths, 
+    load_json,
+    extract_transcripts_from_pptx
+)
 
 
 def generate_audio(transcript, slide_number, output_dir, api_key=None):
@@ -86,7 +92,7 @@ def generate_audio(transcript, slide_number, output_dir, api_key=None):
 
 
 def process_transcripts(transcripts_file, output_dir=None):
-    """Process transcripts and generate audio for each slide."""
+    """Process transcripts from a JSON file and generate audio for each slide."""
     # Load the transcripts
     transcripts = load_json(transcripts_file)
 
@@ -102,6 +108,10 @@ def process_transcripts(transcripts_file, output_dir=None):
         slide_number = slide_data["slide_number"]
         transcript = slide_data["transcript"]
 
+        if not transcript:
+            print(f"No transcript available for slide {slide_number}, skipping.")
+            continue
+
         # Generate audio
         generate_audio(transcript, slide_number, output_dir)
 
@@ -112,23 +122,101 @@ def process_transcripts(transcripts_file, output_dir=None):
     return output_dir
 
 
+def process_pptx_for_audio(pptx_path, output_dir=None):
+    """
+    Extract transcripts from a PowerPoint file and generate audio for each slide.
+    
+    Args:
+        pptx_path (Path or str): Path to the PowerPoint file
+        output_dir (Path or str, optional): Directory to save the audio files
+        
+    Returns:
+        Path: Path to the directory containing the generated audio files
+    """
+    pptx_path = Path(pptx_path)
+    
+    # Extract transcripts from PowerPoint
+    print(f"Extracting transcripts from {pptx_path.name}...")
+    transcripts = extract_transcripts_from_pptx(pptx_path)
+    
+    # Set up output directory
+    if not output_dir:
+        paths = get_project_paths()
+        output_dir = paths["output_dir"] / f"{pptx_path.stem}_audio"
+    else:
+        output_dir = Path(output_dir)
+    
+    ensure_directory(output_dir)
+    
+    # Check if we have any transcripts
+    valid_transcripts = [t for t in transcripts if t["transcript"]]
+    if not valid_transcripts:
+        print(f"No transcripts found in the notes section of {pptx_path.name}")
+        return None
+    
+    print(f"Found {len(valid_transcripts)} slide(s) with transcripts")
+    
+    # Process each transcript
+    for slide_data in transcripts:
+        slide_number = slide_data["slide_number"]
+        transcript = slide_data["transcript"]
+        
+        if not transcript:
+            print(f"No transcript available for slide {slide_number}, skipping.")
+            continue
+        
+        # Generate audio
+        generate_audio(transcript, slide_number, output_dir)
+        
+        # Add a small delay to avoid rate limiting
+        time.sleep(1)
+    
+    print("Audio generation complete!")
+    return output_dir
+
+
 def main():
     """Main function to run the voice generator."""
     paths = get_project_paths()
     ensure_directory(paths["output_dir"])
-
-    # Find transcript files in the output directory
-    transcript_files = list(paths["output_dir"].glob("*_transcripts.json"))
-
-    if not transcript_files:
-        print(f"No transcript files found in {paths['output_dir']}")
-        return
-
-    # Process each transcript file
-    for transcript_file in transcript_files:
-        print(f"Processing {transcript_file.name}...")
-        output_dir = paths["output_dir"] / f"{transcript_file.stem}_audio"
-        process_transcripts(transcript_file, output_dir)
+    
+    # Ask user if they want to use a PowerPoint file or JSON transcript file
+    print("Do you want to generate audio from:")
+    print("1. A PowerPoint file with transcripts in notes")
+    print("2. A JSON transcript file")
+    
+    choice = input("Enter your choice (1 or 2): ").strip()
+    
+    if choice == "1":
+        # Look for PowerPoint files in the input directory
+        pptx_files = list(paths["input_dir"].glob("*.pptx"))
+        
+        if not pptx_files:
+            print(f"No PowerPoint files found in {paths['input_dir']}")
+            return
+        
+        # Process each PowerPoint file
+        for pptx_file in pptx_files:
+            print(f"Processing {pptx_file.name}...")
+            output_dir = paths["output_dir"] / f"{pptx_file.stem}_audio"
+            process_pptx_for_audio(pptx_file, output_dir)
+    
+    elif choice == "2":
+        # Look for transcript files in the output directory
+        transcript_files = list(paths["output_dir"].glob("*_transcripts.json"))
+        
+        if not transcript_files:
+            print(f"No transcript files found in {paths['output_dir']}")
+            return
+        
+        # Process each transcript file
+        for transcript_file in transcript_files:
+            print(f"Processing {transcript_file.name}...")
+            output_dir = paths["output_dir"] / f"{transcript_file.stem}_audio"
+            process_transcripts(transcript_file, output_dir)
+    
+    else:
+        print("Invalid choice. Please run the script again and enter 1 or 2.")
 
 
 if __name__ == "__main__":

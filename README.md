@@ -40,6 +40,7 @@ digital_presenter/
    ```
    OPENAI_API_KEY=your_openai_api_key
    MINIMAX_API_KEY=your_minimax_api_key
+   DEEPSEEK_API_KEY=your_deepseek_api_key
    ```
 
 ## Usage

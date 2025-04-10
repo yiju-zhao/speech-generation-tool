@@ -39,7 +39,8 @@ ENV/
 # Project specific
 data/output/audio_files/
 data/output/*.json
-data/input/*.pptx
+*.pptx
+*.mp3
 
 # OS specific
 .DS_Store

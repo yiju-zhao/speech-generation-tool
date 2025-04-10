@@ -2,12 +2,16 @@
 Transcript generation module for Digital Presenter.
 """
 
-import os
-from pathlib import Path
 import openai
 from pptx import Presentation
 
-from .utils import load_config, ensure_directory, get_project_paths, save_json
+from .utils import (
+    load_config,
+    ensure_directory,
+    get_project_paths,
+    save_json,
+    write_transcripts_to_pptx
+)
 
 
 def extract_slide_content(slide):
@@ -20,46 +24,65 @@ def extract_slide_content(slide):
     return "\n".join(slide_content) if slide_content else None
 
 
-def generate_transcript(slide_content, previous_transcript=None, llm_client=None):
+def generate_transcript(slide_content, previous_transcripts=None, llm_client=None, target_language="chinese"):
     """Generate a transcript for a slide using LLM."""
-    if not llm_client:
-        config = load_config()
-        llm_client = openai.OpenAI(api_key=config["openai_api_key"])
-
-    # Add previous slide's transcript as context if available
+    # Add all previous slides' transcripts as context if available
     context = ""
-    if previous_transcript:
-        context = f"\nPrevious slide's transcript:\n{previous_transcript}\n"
+    if previous_transcripts:
+        context = f"{previous_transcripts}\n"
 
-    # Generate transcript using LLM
-    prompt = f"""Please generate a natural, conversational transcript for the following presentation slide content. 
-    Make it sound like someone giving a presentation, with proper transitions and explanations.
-    {context}
+    # Create a single prompt that specifies the output language
+    unified_prompt = f"""
+    Please generate a natural, conversational transcript for the following presentation slide content. Make it sound like someone giving a presentation, with proper transitions and explanations. DO NOT include any additional text or comments.
+
+    OUTPUT LANGUAGE: {target_language.upper()}
+    ONLY output the transcript for speech content. NO instruction or content that can not convert to a voice.
+    
     Current slide content:
     {slide_content}
+
+    Please generate the transcript based on the current slide content to extend the previous slides' transcripts {context}
+    """
     
-    Transcript:"""
-
+    # Use the client that was passed in
     response = llm_client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=500,
+        model="deepseek-chat" if target_language == "chinese" else "gpt-4o-mini",
+        messages=[
+            {"role": "user", "content": unified_prompt}
+        ],
+        max_tokens=2000,
+        stream=False
     )
-
+    
     return response.choices[0].message.content.strip()
 
 
-def process_presentation(pptx_path, output_file=None):
+def process_presentation(pptx_path, output_base_dir=None, target_language="chinese"):
     """Process a presentation and generate transcripts for all slides."""
     # Load the presentation
     presentation = Presentation(pptx_path)
+    
+    # Set up output directory structure
+    if not output_base_dir:
+        paths = get_project_paths()
+        output_base_dir = paths["output_dir"] / pptx_path.stem
+    ensure_directory(output_base_dir)
 
-    # Initialize OpenAI client
+    # Initialize the appropriate LLM client based on target language
     config = load_config()
-    llm_client = openai.OpenAI(api_key=config["openai_api_key"])
+    if target_language == "chinese":
+        # Use DeepSeek for Chinese
+        llm_client = openai.OpenAI(
+            api_key=config["deepseek_api_key"], 
+            base_url="https://api.deepseek.com"
+        )
+    else:
+        # Use OpenAI for English
+        llm_client = openai.OpenAI(api_key=config["openai_api_key"])
 
     # Process each slide
     transcripts = []
+    previous_transcripts = []
     for idx, slide in enumerate(presentation.slides, 1):
         # Extract all text from the slide
         slide_content = extract_slide_content(slide)
@@ -67,11 +90,8 @@ def process_presentation(pptx_path, output_file=None):
         if not slide_content:
             continue
 
-        # Get previous transcript if available
-        previous_transcript = transcripts[-1]["transcript"] if transcripts else None
-
         # Generate transcript
-        transcript = generate_transcript(slide_content, previous_transcript, llm_client)
+        transcript = generate_transcript(slide_content, previous_transcripts, llm_client, target_language)
 
         # Store results
         slide_data = {
@@ -80,17 +100,18 @@ def process_presentation(pptx_path, output_file=None):
             "transcript": transcript,
         }
         transcripts.append(slide_data)
+        previous_transcripts = previous_transcripts + [transcript]
 
         print(f"Processed slide {idx}")
 
-    # Save transcripts to a JSON file
-    if not output_file:
-        paths = get_project_paths()
-        ensure_directory(paths["output_dir"])
-        output_file = paths["output_dir"] / "presentation_transcripts.json"
-
-    save_json(transcripts, output_file)
-    print(f"\nTranscripts have been saved to {output_file}")
+    # Save complete transcripts to a JSON file
+    complete_transcript_file = output_base_dir / "transcript.json"
+    save_json(transcripts, complete_transcript_file)
+    print(f"\nTranscript has been saved to {complete_transcript_file}")
+    
+    # Write transcripts back to the PPTX file
+    noted_pptx_path = write_transcripts_to_pptx(pptx_path, transcripts, output_base_dir)
+    print(f"PPTX with transcripts has been saved to {noted_pptx_path}")
 
     return transcripts
 
@@ -111,8 +132,8 @@ def main():
     # Process each PowerPoint file
     for pptx_file in pptx_files:
         print(f"Processing {pptx_file.name}...")
-        output_file = paths["output_dir"] / f"{pptx_file.stem}_transcripts.json"
-        process_presentation(pptx_file, output_file)
+        output_dir = paths["output_dir"] / pptx_file.stem
+        process_presentation(pptx_file, output_dir)
 
 
 if __name__ == "__main__":

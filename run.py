@@ -38,6 +38,13 @@ def main():
         default="chinese",
         help="Language for transcript generation (default: chinese)",
     )
+    parser.add_argument(
+        "--tts-provider",
+        type=str,
+        choices=["minimax", "openai"],
+        default="minimax",
+        help="Text-to-speech provider to use (default: minimax, which is better for Chinese; openai is better for English)",
+    )
     args = parser.parse_args()
 
     # Get project paths
@@ -65,8 +72,9 @@ def main():
     # Direct audio generation from PowerPoint notes
     if args.direct_audio:
         print(f"Generating audio directly from {pptx_path.name} notes...")
+        print(f"Using {args.tts_provider} for TTS generation")
         output_dir = paths["output_dir"] / f"{pptx_path.stem}_audio"
-        process_pptx_for_audio(pptx_path, output_dir)
+        process_pptx_for_audio(pptx_path, output_dir, provider=args.tts_provider)
         print("Pipeline completed successfully!")
         return
 
@@ -91,8 +99,9 @@ def main():
     # Generate audio
     if not args.skip_audio and transcript_file:
         print(f"Generating audio from transcript {transcript_file.name}...")
+        print(f"Using {args.tts_provider} for TTS generation")
         output_dir = paths["output_dir"] / f"{pptx_path.stem}_audio"
-        process_transcripts(transcript_file, output_dir)
+        process_transcripts(transcript_file, output_dir, provider=args.tts_provider)
 
     print("Pipeline completed successfully!")
 

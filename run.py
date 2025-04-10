@@ -7,7 +7,7 @@ import argparse
 from pathlib import Path
 
 from src.transcript import process_presentation
-from src.voice import process_transcripts
+from src.voice import process_transcripts, process_pptx_for_audio
 from src.utils import get_project_paths, ensure_directory
 
 
@@ -26,6 +26,10 @@ def main():
     )
     parser.add_argument(
         "--skip-audio", action="store_true", help="Skip audio generation"
+    )
+    parser.add_argument(
+        "--direct-audio", action="store_true", 
+        help="Generate audio directly from PowerPoint notes without generating separate transcript file"
     )
     parser.add_argument(
         "--language",
@@ -57,6 +61,14 @@ def main():
         pptx_path = pptx_files[0]
         if len(pptx_files) > 1:
             print(f"Multiple PowerPoint files found. Using {pptx_path.name}")
+
+    # Direct audio generation from PowerPoint notes
+    if args.direct_audio:
+        print(f"Generating audio directly from {pptx_path.name} notes...")
+        output_dir = paths["output_dir"] / f"{pptx_path.stem}_audio"
+        process_pptx_for_audio(pptx_path, output_dir)
+        print("Pipeline completed successfully!")
+        return
 
     # Generate transcripts
     transcript_file = None

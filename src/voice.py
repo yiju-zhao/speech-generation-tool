@@ -23,10 +23,14 @@ def generate_audio(transcript, slide_number, output_dir, api_key=None):
 
     # Minimax TTS API configuration
     api_url = "https://api.minimax.chat/v1/t2a_v2"
+    
+    # According to Minimax documentation, the Authorization header should be "Bearer {api_key}"
+    headers = {
+        "Content-Type": "application/json", 
+        "Authorization": f"Bearer {api_key}"
+    }
 
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
-
-    # Prepare the request payload
+    # Prepare the request payload exactly as specified in the documentation
     payload = {
         "model": "speech-02-hd",
         "text": transcript,
@@ -38,13 +42,18 @@ def generate_audio(transcript, slide_number, output_dir, api_key=None):
             "speed": 1,
             "vol": 1,
             "pitch": 0,
-            "emotion": "happy",
+            "emotion": "happy"
         },
-        "audio_setting": {"sample_rate": 32000, "bitrate": 128000, "format": "mp3"},
+        "audio_setting": {
+            "sample_rate": 32000,
+            "bitrate": 128000,
+            "format": "mp3"
+        }
     }
 
     # Make the API request
     try:
+        print(f"Generating audio for slide {slide_number}...")
         response = requests.post(api_url, headers=headers, json=payload)
         response.raise_for_status()  # Raise an exception for HTTP errors
 
@@ -70,7 +79,7 @@ def generate_audio(transcript, slide_number, output_dir, api_key=None):
                 with open(output_file, "wb") as f:
                     f.write(audio_binary)
 
-                print(f"Generated audio for slide {slide_number}")
+                print(f"Successfully generated audio for slide {slide_number}")
                 print(f"  - Audio length: {audio_length}ms")
                 print(f"  - Audio size: {audio_size} bytes")
                 print(f"  - Word count: {word_count}")

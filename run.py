@@ -27,6 +27,13 @@ def main():
     parser.add_argument(
         "--skip-audio", action="store_true", help="Skip audio generation"
     )
+    parser.add_argument(
+        "--language",
+        type=str,
+        choices=["chinese", "english"],
+        default="chinese",
+        help="Language for transcript generation (default: chinese)",
+    )
     args = parser.parse_args()
 
     # Get project paths
@@ -54,9 +61,9 @@ def main():
     # Generate transcripts
     transcript_file = None
     if not args.skip_transcript:
-        print(f"Generating transcripts for {pptx_path.name}...")
+        print(f"Generating transcripts for {pptx_path.name} in {args.language}...")
         output_file = paths["output_dir"] / f"{pptx_path.stem}_transcripts.json"
-        process_presentation(pptx_path, output_file)
+        process_presentation(pptx_path, output_file, target_language=args.language)
         transcript_file = output_file
     else:
         # Find existing transcript file

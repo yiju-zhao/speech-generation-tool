@@ -7,7 +7,7 @@ import argparse
 from pathlib import Path
 
 from src.transcript import process_presentation
-from src.voice import process_transcripts, process_pptx_for_audio
+from src.voice import process_pptx_for_audio
 from src.utils import get_project_paths, ensure_directory
 
 
@@ -19,10 +19,7 @@ def main():
     parser.add_argument(
         "--pptx",
         type=str,
-        help="Path to PowerPoint file (if not provided, will look in data/input)",
-    )
-    parser.add_argument(
-        "--skip-transcript", action="store_true", help="Skip transcript generation"
+        help="Path to PowerPoint file (if not provided, will look in data/raw)",
     )
     parser.add_argument(
         "--skip-audio", action="store_true", help="Skip audio generation"
@@ -49,8 +46,9 @@ def main():
 
     # Get project paths
     paths = get_project_paths()
-    ensure_directory(paths["input_dir"])
-    ensure_directory(paths["output_dir"])
+    ensure_directory(paths["raw_dir"])
+    ensure_directory(paths["noted_dir"])
+    ensure_directory(paths["audio_dir"])
 
     # Find PowerPoint file
     pptx_path = None
@@ -60,10 +58,10 @@ def main():
             print(f"Error: File {pptx_path} does not exist")
             return
     else:
-        # Look for PowerPoint files in the input directory
-        pptx_files = list(paths["input_dir"].glob("*.pptx"))
+        # Look for PowerPoint files in the raw directory
+        pptx_files = list(paths["raw_dir"].glob("*.pptx"))
         if not pptx_files:
-            print(f"No PowerPoint files found in {paths['input_dir']}")
+            print(f"No PowerPoint files found in {paths['raw_dir']}")
             return
         pptx_path = pptx_files[0]
         if len(pptx_files) > 1:
@@ -71,37 +69,37 @@ def main():
 
     # Direct audio generation from PowerPoint notes
     if args.direct_audio:
-        print(f"Generating audio directly from {pptx_path.name} notes...")
+        # Check if the file is in the noted directory
+        if "noted" in str(pptx_path):
+            noted_pptx = pptx_path
+        else:
+            # Look for the noted version in the noted directory
+            noted_pptx = paths["noted_dir"] / f"{pptx_path.stem}_noted.pptx"
+            if not noted_pptx.exists():
+                print(f"No noted version of {pptx_path.name} found in {paths['noted_dir']}")
+                print("Please run the transcript generation process first.")
+                return
+        
+        print(f"Generating audio directly from {noted_pptx.name} notes...")
         print(f"Using {args.tts_provider} for TTS generation")
-        output_dir = paths["output_dir"] / f"{pptx_path.stem}_audio"
-        process_pptx_for_audio(pptx_path, output_dir, provider=args.tts_provider)
+        
+        # Save audio files to the same directory as the noted PPTX
+        process_pptx_for_audio(noted_pptx, None, provider=args.tts_provider)
         print("Pipeline completed successfully!")
         return
 
     # Generate transcripts
-    transcript_file = None
-    if not args.skip_transcript:
-        print(f"Generating transcripts for {pptx_path.name} in {args.language}...")
-        output_file = paths["output_dir"] / f"{pptx_path.stem}_transcripts.json"
-        process_presentation(pptx_path, output_file, target_language=args.language)
-        transcript_file = output_file
-    else:
-        # Find existing transcript file
-        transcript_files = list(
-            paths["output_dir"].glob(f"{pptx_path.stem}_transcripts.json")
-        )
-        if transcript_files:
-            transcript_file = transcript_files[0]
-        else:
-            print(f"No transcript file found for {pptx_path.name}")
-            return
-
-    # Generate audio
-    if not args.skip_audio and transcript_file:
-        print(f"Generating audio from transcript {transcript_file.name}...")
+    print(f"Generating transcripts for {pptx_path.name} in {args.language}...")
+    output_dir = paths["noted_dir"]
+    noted_pptx = process_presentation(pptx_path, output_dir, target_language=args.language)
+    
+    # Generate audio if not skipped
+    if not args.skip_audio:
+        print(f"Generating audio from {noted_pptx.name}...")
         print(f"Using {args.tts_provider} for TTS generation")
-        output_dir = paths["output_dir"] / f"{pptx_path.stem}_audio"
-        process_transcripts(transcript_file, output_dir, provider=args.tts_provider)
+        
+        # Save audio files to the same directory as the noted PPTX
+        process_pptx_for_audio(noted_pptx, None, provider=args.tts_provider)
 
     print("Pipeline completed successfully!")
 

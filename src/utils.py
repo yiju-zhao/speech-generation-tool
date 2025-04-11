@@ -33,8 +33,9 @@ def get_project_paths():
     base_dir = Path(__file__).parent.parent
     return {
         "base_dir": base_dir,
-        "input_dir": base_dir / "data" / "input",
-        "output_dir": base_dir / "data" / "output",
+        "raw_dir": base_dir / "data" / "raw",
+        "noted_dir": base_dir / "data" / "noted",
+        "audio_dir": base_dir / "data" / "audio",
         "config_dir": base_dir / "config",
         "notebooks_dir": base_dir / "notebooks",
     }

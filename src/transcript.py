@@ -122,16 +122,16 @@ def process_presentation(pptx_path, output_base_dir=None, target_language=None, 
         output_base_dir = paths["noted_dir"]
     ensure_directory(output_base_dir)
 
-    # Initialize the appropriate LLM client based on target language
+    # Initialize the appropriate LLM client based on model choice
     config = load_config()
-    if target_language == "chinese":
-        # Use DeepSeek for Chinese
+    if model and "deepseek" in model.lower():
+        # Use DeepSeek API
         llm_client = openai.OpenAI(
             api_key=config["deepseek_api_key"], 
             base_url="https://api.deepseek.com"
         )
     else:
-        # Use OpenAI for English
+        # Use OpenAI API
         llm_client = openai.OpenAI(api_key=config["openai_api_key"])
 
     # Process each slide

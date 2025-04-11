@@ -42,6 +42,9 @@ data/output/*.json
 *.pptx
 *.mp3
 
+# Configuration
+config/config.toml
+
 # OS specific
 .DS_Store
 .DS_Store?

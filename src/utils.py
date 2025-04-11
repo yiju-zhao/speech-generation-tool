@@ -4,6 +4,7 @@ Utility functions for the Digital Presenter project.
 
 import os
 import json
+import toml
 from pathlib import Path
 from dotenv import load_dotenv
 from pptx import Presentation
@@ -11,15 +12,30 @@ from pptx import Presentation
 
 # Load environment variables
 def load_config():
-    """Load environment variables from .env file."""
-    env_path = Path(__file__).parent.parent / "config" / ".env"
-    load_dotenv(env_path)
-
-    return {
-        "openai_api_key": os.getenv("OPENAI_API_KEY"),
-        "minimax_api_key": os.getenv("MINIMAX_API_KEY"),
-        "deepseek_api_key": os.getenv("DEEPSEEK_API_KEY"),
-    }
+    """Load configuration from config.toml file."""
+    config_path = Path(__file__).parent.parent / "config" / "config.toml"
+    
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"Configuration file not found at {config_path}. "
+            "Please create a config.toml file in the config directory."
+        )
+    
+    try:
+        config = toml.load(config_path)
+        required_keys = ["openai_api_key", "minimax_api_key", "deepseek_api_key"]
+        
+        # Validate that all required keys are present
+        missing_keys = [key for key in required_keys if key not in config]
+        if missing_keys:
+            raise KeyError(
+                f"Missing required configuration keys: {', '.join(missing_keys)}. "
+                "Please check your config.toml file."
+            )
+        
+        return config
+    except toml.TomlDecodeError as e:
+        raise ValueError(f"Error parsing config.toml: {str(e)}")
 
 
 def ensure_directory(directory):

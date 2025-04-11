@@ -11,7 +11,6 @@ from .utils import (
     load_config, 
     ensure_directory, 
     get_project_paths, 
-    load_json,
     extract_transcripts_from_pptx
 )
 
@@ -153,37 +152,6 @@ def generate_audio(transcript, slide_number, output_dir, provider="minimax", api
         return generate_audio_with_minimax(transcript, slide_number, output_dir, api_key)
 
 
-def process_transcripts(transcripts_file, output_dir=None, provider="minimax"):
-    """Process transcripts from a JSON file and generate audio for each slide."""
-    # Load the transcripts
-    transcripts = load_json(transcripts_file)
-
-    # Set up output directory
-    if not output_dir:
-        paths = get_project_paths()
-        output_dir = paths["output_dir"] / "audio_files"
-
-    ensure_directory(output_dir)
-
-    # Process each transcript
-    for slide_data in transcripts:
-        slide_number = slide_data["slide_number"]
-        transcript = slide_data["transcript"]
-
-        if not transcript:
-            print(f"No transcript available for slide {slide_number}, skipping.")
-            continue
-
-        # Generate audio with the specified provider
-        generate_audio(transcript, slide_number, output_dir, provider)
-
-        # Add a small delay to avoid rate limiting
-        time.sleep(1)
-
-    print("Audio generation complete!")
-    return output_dir
-
-
 def process_pptx_for_audio(pptx_path, output_dir=None, provider="minimax"):
     """
     Extract transcripts from a PowerPoint file and generate audio for each slide.
@@ -202,10 +170,10 @@ def process_pptx_for_audio(pptx_path, output_dir=None, provider="minimax"):
     print(f"Extracting transcripts from {pptx_path.name}...")
     transcripts = extract_transcripts_from_pptx(pptx_path)
     
-    # Set up output directory
+    # Set up output directory - use the same directory as the PPTX file by default
     if not output_dir:
-        paths = get_project_paths()
-        output_dir = paths["output_dir"] / f"{pptx_path.stem}_audio"
+        # Use the same directory as the PPTX file
+        output_dir = pptx_path.parent
     else:
         output_dir = Path(output_dir)
     
@@ -215,9 +183,12 @@ def process_pptx_for_audio(pptx_path, output_dir=None, provider="minimax"):
     valid_transcripts = [t for t in transcripts if t["transcript"]]
     if not valid_transcripts:
         print(f"No transcripts found in the notes section of {pptx_path.name}")
+        print("This might be because the PPTX file doesn't have transcripts in the notes section.")
+        print("Please run the transcript generation process first to add transcripts to the PPTX.")
         return None
     
     print(f"Found {len(valid_transcripts)} slide(s) with transcripts")
+    print(f"Audio files will be saved to: {output_dir}")
     
     # Process each transcript
     for slide_data in transcripts:
@@ -241,14 +212,7 @@ def process_pptx_for_audio(pptx_path, output_dir=None, provider="minimax"):
 def main():
     """Main function to run the voice generator."""
     paths = get_project_paths()
-    ensure_directory(paths["output_dir"])
-    
-    # Ask user if they want to use a PowerPoint file or JSON transcript file
-    print("Do you want to generate audio from:")
-    print("1. A PowerPoint file with transcripts in notes")
-    print("2. A JSON transcript file")
-    
-    choice = input("Enter your choice (1 or 2): ").strip()
+    ensure_directory(paths["noted_dir"])
     
     # Ask user which TTS provider to use
     print("\nWhich Text-to-Speech provider would you like to use?")
@@ -265,36 +229,19 @@ def main():
         provider = "minimax"
         print("Using Minimax TTS")
     
-    if choice == "1":
-        # Look for PowerPoint files in the input directory
-        pptx_files = list(paths["input_dir"].glob("*.pptx"))
-        
-        if not pptx_files:
-            print(f"No PowerPoint files found in {paths['input_dir']}")
-            return
-        
-        # Process each PowerPoint file
-        for pptx_file in pptx_files:
-            print(f"Processing {pptx_file.name}...")
-            output_dir = paths["output_dir"] / f"{pptx_file.stem}_audio"
-            process_pptx_for_audio(pptx_file, output_dir, provider)
+    # Look for PowerPoint files in the noted directory
+    noted_dir = paths["noted_dir"]
+    pptx_files = list(noted_dir.glob("*_noted.pptx"))
     
-    elif choice == "2":
-        # Look for transcript files in the output directory
-        transcript_files = list(paths["output_dir"].glob("*_transcripts.json"))
-        
-        if not transcript_files:
-            print(f"No transcript files found in {paths['output_dir']}")
-            return
-        
-        # Process each transcript file
-        for transcript_file in transcript_files:
-            print(f"Processing {transcript_file.name}...")
-            output_dir = paths["output_dir"] / f"{transcript_file.stem}_audio"
-            process_transcripts(transcript_file, output_dir, provider)
+    if not pptx_files:
+        print(f"No PowerPoint files with transcripts found in {noted_dir}")
+        return
     
-    else:
-        print("Invalid choice. Please run the script again and enter 1 or 2.")
+    # Process each PowerPoint file
+    for pptx_file in pptx_files:
+        print(f"Processing {pptx_file.name}...")
+        print(f"Audio files will be saved to the same directory as the PPTX file: {pptx_file.parent}")
+        process_pptx_for_audio(pptx_file, None, provider)
 
 
 if __name__ == "__main__":

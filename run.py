@@ -38,9 +38,9 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        choices=["deepseek-chat", "deepseek-reasoner", "gpt-4o", "gpt-4o-mini"],
+        choices=["deepseek-chat", "deepseek-reasoner", "gpt-4o", "gpt-4o-mini", "gemini-pro", "gemini-pro-vision"],
         default="gpt-4o-mini",
-        help="Model to use for transcript generation. If not specified, will use deepseek-chat for Chinese and gpt-4 for English",
+        help="Model to use for transcript generation",
     )
     parser.add_argument(
         "--tts-provider",
@@ -94,10 +94,6 @@ def main():
         process_pptx_for_audio(noted_pptx, None, provider=args.tts_provider)
         print("Pipeline completed successfully!")
         return
-
-    # Set default model based on language if not specified
-    if args.model is None:
-        args.model = "deepseek-chat" if args.language == "chinese" else "gpt-4"
 
     # Generate transcripts
     print(f"Generating transcripts for {pptx_path.name} in {args.language} using {args.model}...")

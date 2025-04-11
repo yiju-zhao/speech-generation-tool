@@ -1,0 +1,43 @@
+# Digital Presenter Configuration
+# Copy this file to config.toml and replace the values with your actual API keys
+
+# API Keys
+# Replace these with your actual API keys from the respective services
+openai_api_key = "sk-..."  # OpenAI API key starting with 'sk-'
+minimax_api_key = "eyJ..."  # MiniMax API key
+deepseek_api_key = "sk-..."  # DeepSeek API key
+
+# Model Configuration
+[models]
+# Default model to use for text generation
+default_model = "gpt-4"  # or "gpt-3.5-turbo", "deepseek-chat", "gemini-pro"
+
+# Model-specific settings
+[models.openai]
+temperature = 0.7
+max_tokens = 2000
+top_p = 1.0
+frequency_penalty = 0.0
+presence_penalty = 0.0
+
+[models.deepseek]
+temperature = 0.7
+max_tokens = 2000
+
+[models.gemini]
+temperature = 0.7
+max_tokens = 2000
+
+# Output Configuration
+[output]
+# Directory for generated files
+output_dir = "data/output"
+# File format for transcripts
+transcript_format = "json"  # or "txt", "md"
+
+# Logging Configuration
+[logging]
+level = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+file = "logs/digital_presenter.log"
+max_file_size = 10485760  # 10MB in bytes
+backup_count = 5 

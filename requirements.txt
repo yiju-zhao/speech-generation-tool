@@ -6,3 +6,4 @@ comtypes
 pdf2image
 Pillow>=9.0.0
 reportlab>=4.0.0  # For PDF generation
+toml>=0.10.2  # For configuration management

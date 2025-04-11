@@ -11,6 +11,7 @@ from .utils import (
     get_project_paths,
     write_transcripts_to_pptx
 )
+from .llm import get_llm_provider
 
 
 def extract_slide_content(slide):
@@ -45,7 +46,7 @@ def extract_slide_content(slide):
     return "\n".join(slide_content) if slide_content else None
 
 
-def generate_transcript(slide_content, previous_transcripts=None, llm_client=None, target_language="chinese", model=None):
+def generate_transcript(slide_content, previous_transcripts=None, llm_client=None, target_language=None, model=None):
     """Generate a transcript for a slide using LLM."""
     # Add all previous slides' transcripts as context if available
     context = ""
@@ -67,7 +68,7 @@ def generate_transcript(slide_content, previous_transcripts=None, llm_client=Non
     - Context: {context}  
 
     **Output Specifications**:  
-    `Language`: {target_language.upper()}  
+    `Language`: {target_language.upper() if target_language else "ENGLISH"}  
     `Format`: Pure speech text (no markup/annotations)  
 
     **Technical Protocols**:  
@@ -99,16 +100,7 @@ def generate_transcript(slide_content, previous_transcripts=None, llm_client=Non
     ‼ If term conflict: Prioritize slide terminology       
     """
     
-    response = llm_client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "user", "content": prompt}
-        ],
-        max_tokens=3000,
-        stream=False
-    )
-    
-    return response.choices[0].message.content.strip()
+    return llm_client.generate(prompt, model)
 
 
 def process_presentation(pptx_path, output_base_dir=None, target_language=None, model=None):
@@ -124,15 +116,7 @@ def process_presentation(pptx_path, output_base_dir=None, target_language=None, 
 
     # Initialize the appropriate LLM client based on model choice
     config = load_config()
-    if model and "deepseek" in model.lower():
-        # Use DeepSeek API
-        llm_client = openai.OpenAI(
-            api_key=config["deepseek_api_key"], 
-            base_url="https://api.deepseek.com"
-        )
-    else:
-        # Use OpenAI API
-        llm_client = openai.OpenAI(api_key=config["openai_api_key"])
+    llm_client = get_llm_provider(model, config)
 
     # Process each slide
     transcripts = []

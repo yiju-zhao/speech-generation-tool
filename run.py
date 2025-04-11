@@ -36,6 +36,12 @@ def main():
         help="Language for transcript generation (default: chinese)",
     )
     parser.add_argument(
+        "--model",
+        type=str,
+        default="gpt-4o",
+        help="Model to use for transcript generation (default: gpt-4o)",
+    )
+    parser.add_argument(
         "--tts-provider",
         type=str,
         choices=["minimax", "openai"],
@@ -89,9 +95,9 @@ def main():
         return
 
     # Generate transcripts
-    print(f"Generating transcripts for {pptx_path.name} in {args.language}...")
+    print(f"Generating transcripts for {pptx_path.name} in {args.language} using {args.model}...")
     output_dir = paths["noted_dir"]
-    noted_pptx = process_presentation(pptx_path, output_dir, target_language=args.language)
+    noted_pptx = process_presentation(pptx_path, output_dir, target_language=args.language, model=args.model)
     
     # Generate audio if not skipped
     if not args.skip_audio:

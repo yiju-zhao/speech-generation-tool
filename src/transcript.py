@@ -45,81 +45,73 @@ def extract_slide_content(slide):
     return "\n".join(slide_content) if slide_content else None
 
 
-def generate_transcript(slide_content, previous_transcripts=None, llm_client=None, target_language="chinese"):
+def generate_transcript(slide_content, previous_transcripts=None, llm_client=None, target_language="chinese", model=None):
     """Generate a transcript for a slide using LLM."""
     # Add all previous slides' transcripts as context if available
     context = ""
     if previous_transcripts:
         context = f"{previous_transcripts}\n"
-
-    # Check if the slide_content contains both slide content and unpolished notes
-    has_unpolished_notes = "UNPOLISHED NOTES" in slide_content
     
-    # Create a prompt that specifies the output language and provides clear instructions
-    if has_unpolished_notes:
-        unified_prompt = f"""
-        You are a professional presenter creating a natural speech transcript for direct voice synthesis. 
-        Strictly generate ONLY SPOKEN CONTENT without any non-verbal cues or formatting notes.
+    # Create a unified prompt that handles both cases
+    prompt = f"""
+    **Role**: Technical Speech Architect  
+    **Objective**: Create TTS-ready transcripts with uncompromised accuracy  
 
-        TASK: Convert unpolished notes into a voice-ready transcript that integrates slide content and previous context. 
-        Create seamless transitions using spoken words only.
+    **Core Directives**:  
+    1. Preserve _exact_ terminology + numerical precision  
+    2. Optimize complex concepts for vocal clarity  
+    3. Maintain academic rigor in spoken format  
 
-        OUTPUT REQUIREMENTS:
-        - Language: {target_language.upper()}
-        - Format: Plain text speech for direct TTS use
-        - PROHIBITED: Parenthetical notes, stage directions, or non-verbal cues
-        - NO: (look around), (pause), or any non-speech elements
-        - NO: Markdown, formatting symbols, or special characters
+    **Input Sources**:  
+    - Content: {slide_content}  
+    - Context: {context}  
 
-        CONTEXT:
-        Previous Transcripts: {context}
-        Current Slide: {slide_content}
+    **Output Specifications**:  
+    `Language`: {target_language.upper()}  
+    `Format`: Pure speech text (no markup/annotations)  
 
-        GUIDELINES:
-        1. Use natural conversational language
-        2. Maintain professional tone
-        3. Create logical flow between ideas
-        4. Connect to previous content through speech only
-        5. Never describe actions - express everything verbally
-        """
-    else:
-        unified_prompt = f"""
-        You are a professional presenter creating a voice-ready transcript for direct synthesis. 
-        Generate ONLY SPOKEN WORDS without any technical annotations.
+    **Technical Protocols**:  
+    ✓ Term fidelity: Use source terms verbatim  
+    ✓ Data integrity: Exact values + full SI units  
+    ✓ First-use acronyms: "Advanced Reactor Concept (ARC)"  
+    ✓ Concept links: "This correlates directly with <previous_term>"  
+    ✓ Transition logic: "Consequently...", "The evidence establishes..."  
 
-        TASK: Create slide narration that naturally continues from previous content using ONLY VERBAL TRANSITIONS.
+    **Prohibited Elements**:  
+    - Approximations ("~", "about")  
+    - Subjective commentary ("surprisingly")  
+    - Non-verbal cues (parentheticals, pauses)  
+    - Casual paraphrasing  
 
-        OUTPUT REQUIREMENTS:
-        - Language: {target_language.upper()}
-        - Format: Plain text speech for immediate TTS use
-        - STRICTLY AVOID: Parentheses, brackets, or non-speech notes
-        - NO: Transition descriptions (e.g., "Moving on...") - use content-based transitions
+    **Structural Guidelines**:  
+    1. **Opening**: Bridge from {context} using exact technical references  
+    2. **Flow**:  
+    - State quantitative relationships verbally  
+    - Use 3-tier vocal hierarchy: Concept → Mechanism → Evidence  
+    - Employ precision transitions: "The critical progression..."  
+    3. **Complex Data**:  
+    - "Three components emerge: (1) <term>, (2) <term>..."  
+    - "Sequential analysis reveals: First... Second... Crucially..."  
 
-        CONTEXT:
-        Previous Transcripts: {context}
-        Current Slide: {slide_content}
-
-        ESSENTIAL INSTRUCTIONS:
-        1. Express all transitions through content connection
-        2. Never comment on presentation mechanics
-        3. Assume all non-verbal elements will be handled by the system
-        4. Maintain consistent pacing through language structure
-        5. Focus on audible content only
-        """
+    **Safety Imperatives**:  
+    ‼ Preserve safety-critical wording verbatim  
+    ‼ Verbalize technical caveats explicitly  
+    ‼ If term conflict: Prioritize slide terminology       
+    """
     
     response = llm_client.chat.completions.create(
-        model="deepseek-chat" if target_language == "chinese" else "gpt-4o-mini",
+        model=model,
         messages=[
-            {"role": "user", "content": unified_prompt}
+            {"role": "user", "content": prompt}
         ],
-        max_tokens=2000,
+        max_tokens=3000,
         stream=False
     )
     
     return response.choices[0].message.content.strip()
 
 
-def process_presentation(pptx_path, output_base_dir=None, target_language="chinese"):
+def process_presentation(pptx_path, output_base_dir=None, target_language=None, model=None):
     """Process a presentation and generate transcripts for all slides."""
     # Load the presentation
     presentation = Presentation(pptx_path)
@@ -161,21 +153,21 @@ def process_presentation(pptx_path, output_base_dir=None, target_language="chine
             print(f"No content found for slide {idx}, skipping.")
             continue
 
-        # Generate transcript
-        # If we have unpolished notes, use them as a guide along with slide content
+        # Combine slide content and unpolished notes if available
+        combined_content = []
+        if slide_content:
+            combined_content.append(f"SLIDE CONTENT:\n{slide_content}")
         if unpolished_notes:
-            # Create a prompt that includes both unpolished notes and slide content
-            combined_content = f"""
-            SLIDE CONTENT:
-            {slide_content if slide_content else "No slide content available"}
-            
-            UNPOLISHED NOTES (USE AS GUIDE):
-            {unpolished_notes}
-            """
-            transcript = generate_transcript(combined_content, previous_transcripts, llm_client, target_language)
-        else:
-            # If no unpolished notes, just use slide content
-            transcript = generate_transcript(slide_content, previous_transcripts, llm_client, target_language)
+            combined_content.append(f"UNPOLISHED NOTES (USE AS GUIDE):\n{unpolished_notes}")
+        
+        # Generate transcript with combined content
+        transcript = generate_transcript(
+            "\n\n".join(combined_content),
+            previous_transcripts,
+            llm_client,
+            target_language,
+            model
+        )
 
         # Store results
         slide_data = {

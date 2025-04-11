@@ -58,40 +58,53 @@ def generate_transcript(slide_content, previous_transcripts=None, llm_client=Non
     # Create a prompt that specifies the output language and provides clear instructions
     if has_unpolished_notes:
         unified_prompt = f"""
-        You are a professional presenter.
+        You are a professional presenter creating a natural speech transcript for direct voice synthesis. 
+        Strictly generate ONLY SPOKEN CONTENT without any non-verbal cues or formatting notes.
 
-        OUTPUT LANGUAGE: {target_language.upper()}
+        TASK: Convert unpolished notes into a voice-ready transcript that integrates slide content and previous context. 
+        Create seamless transitions using spoken words only.
 
-        DO NOT include any additional text or comments.
-        
-        Use the unpolished notes as a guide to understand the intended message, but incorporate information from the slide content as well. Create a coherent, flowing transcript that combines both sources.
-        
-        Current slide content:
-        {slide_content}
-        
-        Previous slides' transcripts:
-        {context}
+        OUTPUT REQUIREMENTS:
+        - Language: {target_language.upper()}
+        - Format: Plain text speech for direct TTS use
+        - PROHIBITED: Parenthetical notes, stage directions, or non-verbal cues
+        - NO: (look around), (pause), or any non-speech elements
+        - NO: Markdown, formatting symbols, or special characters
 
-        Please generate the transcript for this slide based on the above content and make a natural and smooth transition from the previous slides' transcripts:
+        CONTEXT:
+        Previous Transcripts: {context}
+        Current Slide: {slide_content}
+
+        GUIDELINES:
+        1. Use natural conversational language
+        2. Maintain professional tone
+        3. Create logical flow between ideas
+        4. Connect to previous content through speech only
+        5. Never describe actions - express everything verbally
         """
     else:
         unified_prompt = f"""
-        You are a professional presenter.
+        You are a professional presenter creating a voice-ready transcript for direct synthesis. 
+        Generate ONLY SPOKEN WORDS without any technical annotations.
 
-        Make it sound like someone giving a presentation, with proper transitions and explanations. 
+        TASK: Create slide narration that naturally continues from previous content using ONLY VERBAL TRANSITIONS.
 
-        DO NOT include any additional text or comments.
+        OUTPUT REQUIREMENTS:
+        - Language: {target_language.upper()}
+        - Format: Plain text speech for immediate TTS use
+        - STRICTLY AVOID: Parentheses, brackets, or non-speech notes
+        - NO: Transition descriptions (e.g., "Moving on...") - use content-based transitions
 
-        OUTPUT LANGUAGE: {target_language.upper()}
-        ONLY output the transcript for speech content. NO instruction or content that can not convert to a voice.
-        
-        Current slide content:
-        {slide_content}
+        CONTEXT:
+        Previous Transcripts: {context}
+        Current Slide: {slide_content}
 
-        Previous slides' transcripts:
-        {context}
-        
-        Please generate the transcript for this slide based on the current slide content and make a natural and smooth transition from the previous slides' transcripts:
+        ESSENTIAL INSTRUCTIONS:
+        1. Express all transitions through content connection
+        2. Never comment on presentation mechanics
+        3. Assume all non-verbal elements will be handled by the system
+        4. Maintain consistent pacing through language structure
+        5. Focus on audible content only
         """
     
     response = llm_client.chat.completions.create(

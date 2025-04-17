@@ -64,6 +64,13 @@ def process_presentation_with_storm(
     tavily_api_key = config.get("tavily_api_key", None)
     knowledge_base_dir = config.get("knowledge_base_dir")
     
+    # Create file-specific subdirectory in knowledge base
+    if knowledge_base_dir:
+        file_name = os.path.splitext(os.path.basename(pptx_path))[0]
+        knowledge_base_dir = os.path.join(knowledge_base_dir, file_name)
+        ensure_directory(knowledge_base_dir)
+        logging.info(f"Knowledge base will be stored in: {knowledge_base_dir}")
+    
     # Validate API key if web search is enabled
     if enable_search and not tavily_api_key:
         logging.warning("Web search is enabled but no Tavily API key found in config.toml. Disabling web search.")

@@ -39,6 +39,9 @@ ENV/
 # Project specific
 data/output/audio_files/
 data/output/*.json
+# Ignore all data files
+data/*
+!data/README.md
 *.pptx
 *.mp3
 

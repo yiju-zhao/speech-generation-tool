@@ -133,11 +133,15 @@ def write_transcripts_to_pptx(pptx_path, transcripts, output_base_dir=None):
     # Load the presentation
     presentation = Presentation(pptx_path)
 
+    # Create a dictionary mapping slide numbers to transcripts for easier lookup
+    slide_transcript_map = {data["slide_number"]: data for data in transcripts}
+    
     # Write transcripts to the notes of each slide
-    for i, slide in enumerate(presentation.slides):
-        if i < len(transcripts):
+    for i, slide in enumerate(presentation.slides, 1):  # Start from 1 to match slide_number
+        # Check if we have a transcript for this slide
+        if i in slide_transcript_map:
             # Get the transcript for this slide
-            slide_data = transcripts[i]
+            slide_data = slide_transcript_map[i]
 
             # Create a notes slide if it doesn't exist
             if not slide.has_notes_slide:

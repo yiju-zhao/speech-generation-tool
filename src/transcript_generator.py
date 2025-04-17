@@ -216,6 +216,7 @@ class TranscriptGenerator:
         3. Preserve exact terminology and numerical precision
         4. When technical terms or complex concepts appear, you MAY use the knowledge base information ONLY to provide a brief explanation
         5. DO NOT add any information that isn't in the verified content unless it's explaining a technical term
+        6. FOLLOW THE SAME ORDER as the original slide content - do not rearrange or reorganize information
 
         **Input Sources**:  
         - Primary Source (MUST follow): {verified_content}
@@ -227,6 +228,7 @@ class TranscriptGenerator:
         - For technical terms/concepts: You may BRIEFLY clarify using knowledge base
         - NEVER add unrelated facts or tangential information
         - ALWAYS prioritize the verified slide content over external knowledge
+        - MAINTAIN the same sequence and flow of information as presented in the original slide
 
         **Output Specifications**:  
         `Language`: {self.target_language.upper() if self.target_language else "ENGLISH"}  
@@ -237,6 +239,7 @@ class TranscriptGenerator:
         ✓ Term fidelity: Use source terms verbatim
         ✓ Speech optimization: Concise, natural speech patterns
         ✓ Technical explanations: ONLY when needed, BRIEF, and DIRECTLY relevant
+        ✓ Sequence adherence: FOLLOW the same order of information as the original slide content
         ✓ Slide-specific handling:
           - If title/first slide: Create a brief, engaging introduction
           - If thank you slide: Keep it simple, just a brief thank you message
@@ -248,6 +251,7 @@ class TranscriptGenerator:
         - Additional background information not directly explaining a technical term
         - Tangential information or examples not directly from the slide
         - Non-verbal cues (parentheticals, pauses)
+        - Rearranging or reorganizing the flow of information from the original slide
         
         **FORMAT RESTRICTION (CRITICAL)**:
         1. Output ONLY the actual transcript text
@@ -285,12 +289,22 @@ class TranscriptReviewer:
         elif isinstance(slide_info, dict) and 'type' in slide_info:
             slide_type = slide_info['type']
 
+        # Extract original slide content if available
+        original_content = ""
+        if hasattr(slide_info, 'content'):
+            original_content = slide_info.content
+        elif isinstance(slide_info, dict) and 'content' in slide_info:
+            original_content = slide_info['content']
+
         prompt = f"""
         You are a transcript fact-checker with expertise in detecting hallucinations and ensuring presentation-ready speech.
         
         SLIDE INFORMATION:
         - Position: {slide_position} (first, middle, last)
         - Type: {slide_type} (title, content, thank_you, q_and_a, etc.)
+        
+        ORIGINAL SLIDE CONTENT:
+        {original_content}
         
         VERIFIED FACTS:
         {facts_text}
@@ -304,14 +318,19 @@ class TranscriptReviewer:
         2. Is it appropriately concise and focused for a presentation?
         3. Is it appropriate for the slide type? (e.g., brief for thank you slides)
         4. Does it sound natural when spoken aloud?
+        5. Does it follow the same order and structure as the original slide content?
+        6. Is it engaging and effective for a presentation audience?
         
         Format your response as a JSON object with these fields:
         - "accurate" (boolean): Whether the transcript contains ONLY information from verified facts
         - "presentation_ready" (boolean): Whether the transcript is appropriately concise and focused
+        - "follows_slide_order" (boolean): Whether the transcript follows the same order as the original slide content
+        - "presentation_quality" (number, 1-10): Rating the overall quality and effectiveness as presentation speech
         - "hallucinations" (list): Any claims in the transcript not supported by verified facts
         - "style_issues" (list): Any issues with presentation style (too verbose, too academic, etc.)
+        - "order_issues" (list): Any issues with the transcript not following the original slide content order
         - "corrections" (list): Suggested corrections for any inaccuracies
-        - "revised_transcript" (string): A revised version that is factually accurate and presentation-ready
+        - "revised_transcript" (string): A revised version that is factually accurate, presentation-ready, and follows the original order
         """
 
         result = self.llm_client.generate(prompt, self.model)
@@ -323,8 +342,11 @@ class TranscriptReviewer:
             review = {
                 "accurate": False,
                 "presentation_ready": False,
+                "follows_slide_order": False,
+                "presentation_quality": 5,
                 "hallucinations": [],
                 "style_issues": [],
+                "order_issues": [],
                 "corrections": [],
                 "revised_transcript": transcript,
             }
@@ -338,6 +360,8 @@ class TranscriptReviewer:
                     review["hallucinations"].append(line)
                 elif "style issue:" in line.lower():
                     review["style_issues"].append(line)
+                elif "order issue:" in line.lower():
+                    review["order_issues"].append(line)
                 elif "correction:" in line.lower():
                     review["corrections"].append(line)
                 elif line.startswith("Revised transcript:") or is_revised:

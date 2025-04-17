@@ -3,53 +3,29 @@
 Digital Presenter - Main script to run the entire pipeline.
 """
 
-import argparse
 from pathlib import Path
 
-from src.transcript import process_presentation
+from src.transcript import process_presentation as standard_process_presentation
+from src.transcript_processor import process_presentation_with_storm
 from src.voice import process_pptx_for_audio
 from src.utils import get_project_paths, ensure_directory
+from config.parse_args import parse_args
 
 
 def main():
     """Run the Digital Presenter pipeline."""
-    parser = argparse.ArgumentParser(
-        description="Digital Presenter - Generate transcripts and audio for presentations"
-    )
-    parser.add_argument(
-        "--pptx",
-        type=str,
-        help="Path to PowerPoint file (if not provided, will look in data/raw)",
-    )
-    parser.add_argument(
-        "--skip-audio", action="store_true", help="Skip audio generation"
-    )
-    parser.add_argument(
-        "--direct-audio", action="store_true", 
-        help="Generate audio directly from PowerPoint notes without generating separate transcript file"
-    )
-    parser.add_argument(
-        "--language",
-        type=str,
-        choices=["chinese", "english"],
-        default="chinese",
-        help="Language for transcript generation (default: chinese)",
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        choices=["deepseek-chat", "deepseek-reasoner", "gpt-4o", "gpt-4o-mini", "gemini-pro", "gemini-pro-vision"],
-        default="gpt-4o-mini",
-        help="Model to use for transcript generation",
-    )
-    parser.add_argument(
-        "--tts-provider",
-        type=str,
-        choices=["minimax", "openai"],
-        default="minimax",
-        help="Text-to-speech provider to use (default: minimax, which is better for Chinese; openai is better for English)",
-    )
-    args = parser.parse_args()
+    args = parse_args()
+
+    # Extract arguments
+    pptx_path_arg = args.pptx
+    skip_audio = args.skip_audio
+    direct_audio = args.direct_audio
+    language = args.language
+    model = args.model
+    tts_provider = args.tts_provider
+    llm_provider = args.llm_provider
+    use_storm = args.use_storm
+    disable_search = args.disable_search
 
     # Get project paths
     paths = get_project_paths()
@@ -59,8 +35,8 @@ def main():
 
     # Find PowerPoint file
     pptx_path = None
-    if args.pptx:
-        pptx_path = Path(args.pptx)
+    if pptx_path_arg:
+        pptx_path = Path(pptx_path_arg)
         if not pptx_path.exists():
             print(f"Error: File {pptx_path} does not exist")
             return
@@ -75,7 +51,7 @@ def main():
             print(f"Multiple PowerPoint files found. Using {pptx_path.name}")
 
     # Direct audio generation from PowerPoint notes
-    if args.direct_audio:
+    if direct_audio:
         # Check if the file is in the noted directory
         if "noted" in str(pptx_path):
             noted_pptx = pptx_path
@@ -83,30 +59,58 @@ def main():
             # Look for the noted version in the noted directory
             noted_pptx = paths["noted_dir"] / f"{pptx_path.stem}_noted.pptx"
             if not noted_pptx.exists():
-                print(f"No noted version of {pptx_path.name} found in {paths['noted_dir']}")
+                print(
+                    f"No noted version of {pptx_path.name} found in {paths['noted_dir']}"
+                )
                 print("Please run the transcript generation process first.")
                 return
-        
+
         print(f"Generating audio directly from {noted_pptx.name} notes...")
-        print(f"Using {args.tts_provider} for TTS generation")
-        
+        print(f"Using {tts_provider} for TTS generation")
+
         # Save audio files to the same directory as the noted PPTX
-        process_pptx_for_audio(noted_pptx, None, provider=args.tts_provider)
+        process_pptx_for_audio(noted_pptx, None, provider=tts_provider)
         print("Pipeline completed successfully!")
         return
 
     # Generate transcripts
-    print(f"Generating transcripts for {pptx_path.name} in {args.language} using {args.model}...")
-    output_dir = paths["noted_dir"]
-    noted_pptx = process_presentation(pptx_path, output_dir, target_language=args.language, model=args.model)
-    
+    if use_storm:
+        print(
+            f"Generating transcripts with Storm-enhanced approach for {pptx_path.name}..."
+        )
+        print(f"Language: {language}, Model: {model}, Provider: {llm_provider}")
+        print(
+            f"Web search for fact verification: {'DISABLED' if disable_search else 'ENABLED'}"
+        )
+
+        noted_pptx_path = process_presentation_with_storm(
+            pptx_path=pptx_path,
+            output_base_dir=paths["noted_dir"],
+            target_language=language,
+            model=model,
+            enable_search=not disable_search,
+            llm_provider=llm_provider,
+            slides=args.slides,
+        )
+    else:
+        print(f"Generating transcripts with standard approach for {pptx_path.name}...")
+        print(f"Language: {language}, Model: {model}, Provider: {llm_provider}")
+        noted_pptx_path = standard_process_presentation(
+            pptx_path=pptx_path,
+            output_base_dir=paths["noted_dir"],
+            target_language=language,
+            model=model,
+            llm_provider=llm_provider,
+            slides=args.slides,
+        )
+
     # Generate audio if not skipped
-    if not args.skip_audio:
-        print(f"Generating audio from {noted_pptx.name}...")
-        print(f"Using {args.tts_provider} for TTS generation")
-        
+    if not skip_audio:
+        print("Generating audio from transcripts...")
+        print(f"Using {tts_provider} for TTS generation")
+
         # Save audio files to the same directory as the noted PPTX
-        process_pptx_for_audio(noted_pptx, None, provider=args.tts_provider)
+        process_pptx_for_audio(noted_pptx_path, None, provider=tts_provider)
 
     print("Pipeline completed successfully!")
 

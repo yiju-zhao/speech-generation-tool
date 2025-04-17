@@ -1,0 +1,60 @@
+{
+    "items": [
+        {
+            "content": "The multi-scale simulation approach for assessing 2D material FETs combines small-signal modeling with numerical simulations to comprehensively analyze device performance. This method integrates a self-consistent numerical simulator at the device level to model electrostatics and carrier transport, along with a small-signal equivalent circuit to capture high-frequency behavior. The approach extracts small-signal elements from the numerical solver and incorporates them into the equivalent circuit, while also accounting for metal-2D material contact resistances and gate resistance. This versatile platform enables evaluation of various factors affecting RF performance in 2D material-based FETs, including channel scaling, crystal transport properties, and strain effects. The multi-scale technique provides insights into device behavior across different scales, from material-level calculations to overall device performance, making it a powerful tool for optimizing and predicting the performance of 2D material FETs in radio-frequency applications.",
+            "source": "Tavily AI Answer",
+            "metadata": {
+                "title": "Tavily AI-Generated Answer",
+                "source_query": "\"what is the multi-scale simulation approach for assessing 2D material FETs\",",
+                "retrieval_method": "tavily_ai_answer",
+                "slide_number": 2,
+                "is_ai_answer": true
+            }
+        },
+        {
+            "content": "Germanane (GeH) is a novel two-dimensional material that serves as the germanium analog of graphane, featuring hydrogen-terminated germanium. It possesses several advantageous properties, including a direct band gap of 1.6 eV, low effective mass, high carrier mobility of up to 18,000 cm\u00b2V\u207b\u00b9s\u207b\u00b9, and thermodynamic stability. These characteristics make germanane highly promising for applications in electronics and optoelectronics, particularly in field-effect transistors (FETs) and Schottky diodes. In FET applications, germanane demonstrates significant potential, with Schottky barrier FETs showing promising performance. Simulations of germanane-based Schottky barrier FETs reveal that devices with zero Schottky barrier height exhibit approximately 20% improved performance. The unique electronic properties of germanane, combined with its 2D structure, position it as a compelling material for advancing semiconductor technology and enabling the development of high-performance electronic devices.",
+            "source": "Tavily AI Answer",
+            "metadata": {
+                "title": "Tavily AI-Generated Answer",
+                "source_query": "\"explain Germanane (GeH) properties and applications in FETs\",",
+                "retrieval_method": "tavily_ai_answer",
+                "slide_number": 2,
+                "is_ai_answer": true
+            }
+        },
+        {
+            "content": "Germanane Field Effect Transistors (FETs) are electronic devices based on germanane, a two-dimensional material analogous to graphane (hydrogen-terminated graphene). Germanane possesses several advantageous properties that make it promising for electronics and optoelectronics applications. These include a direct band gap, low effective mass, high carrier mobility, and thermodynamic stability. Germanane FETs have been successfully fabricated using multilayer single crystal flakes, demonstrating transport capabilities in both electron and hole doped regimes. These devices exhibit impressive performance characteristics, including on/off current ratios of up to 10^5 at low temperatures (77 K) and 10^4 at room temperature. Carrier mobilities in germanane FETs reach 150 cm\u00b2/(V\u00b7s) at 77 K and 70 cm\u00b2/(V\u00b7s) at room temperature. The ability to function as both n-type and p-type semiconductors, combined with their high mobility and on/off ratios, makes germanane FETs particularly attractive for future electronic applications.",
+            "source": "Tavily AI Answer",
+            "metadata": {
+                "title": "Tavily AI-Generated Answer",
+                "source_query": "\"explain Germanane Field Effect Transistors and their properties\",",
+                "retrieval_method": "tavily_ai_answer",
+                "slide_number": 2,
+                "is_ai_answer": true
+            }
+        },
+        {
+            "content": "Germanane Field Effect Transistors (FETs) are electronic devices based on germanane, a two-dimensional material analogous to graphane (hydrogen-terminated graphene). Germanane possesses several advantageous properties that make it promising for electronics and optoelectronics applications. These include a direct band gap, low effective mass, high carrier mobility, and thermodynamic stability. Germanane FETs have been successfully fabricated using multilayer single crystal flakes, demonstrating transport capabilities in both electron and hole doped regimes. These devices exhibit impressive performance characteristics, including on/off current ratios of up to 10^5 at low temperatures (77 K) and 10^4 at room temperature. Carrier mobilities in germanane FETs reach 150 cm\u00b2/(V\u00b7s) at 77 K and 70 cm\u00b2/(V\u00b7s) at room temperature. The ability to function as both n-type and p-type semiconductors, combined with their high mobility and on/off ratios, makes germanane FETs particularly attractive for future electronic applications.",
+            "source": "Tavily AI Answer",
+            "metadata": {
+                "title": "Tavily AI-Generated Answer",
+                "source_query": "\"explain Germanane Field Effect Transistors and their properties\",",
+                "retrieval_method": "tavily_ai_answer",
+                "slide_number": 2,
+                "is_ai_answer": true,
+                "slide_content_snippet": "Assessment of Germanane Field Effect Transistors: From Intrinsic Device to CMOS Circuit Performance\n..."
+            }
+        },
+        {
+            "content": "Germanane (GeH) field-effect transistors (FETs) show significant potential for improving CMOS circuit performance. GeH FETs outperform similar devices based on 2D materials like MoS2 and black phosphorus in terms of energy-delay product (EDP). The n-type GeH FET exhibits approximately 40% larger on-current than its p-type counterpart, resulting in faster switching speeds and lower power-delay product. By optimizing power supply voltage and threshold voltage, the performance of GeH-based CMOS circuits can be further enhanced to minimize EDP. Comprehensive studies covering material parameterization, device simulation, and circuit analyses demonstrate that germanane is a promising contender for electronic devices in next-generation CMOS technology. The unique properties of GeH, including its heavy and light holes, require careful consideration in device modeling and optimization to fully leverage its potential in CMOS applications.",
+            "source": "Tavily AI Answer",
+            "metadata": {
+                "title": "Tavily AI-Generated Answer",
+                "source_query": "\"what is the significance of CMOS circuit performance in Germanane FETs\",",
+                "retrieval_method": "tavily_ai_answer",
+                "slide_number": 2,
+                "is_ai_answer": true
+            }
+        }
+    ]
+}

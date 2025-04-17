@@ -2,48 +2,16 @@
 Transcript generation module for Digital Presenter.
 """
 
-import openai
 from pptx import Presentation
 
 from .utils import (
     load_config,
     ensure_directory,
     get_project_paths,
-    write_transcripts_to_pptx
+    write_transcripts_to_pptx,
+    extract_slide_content
 )
 from .llm import get_llm_provider
-
-
-def extract_slide_content(slide):
-    """Extract all text content from a slide."""
-    slide_content = []
-    
-    # Process all shapes in the slide
-    for shape in slide.shapes:
-        # Handle direct text attributes
-        if hasattr(shape, "text") and shape.text.strip():
-            slide_content.append(shape.text.strip())
-        
-        # Handle tables
-        if shape.has_table:
-            table = shape.table
-            for row in table.rows:
-                row_text = []
-                for cell in row.cells:
-                    if cell.text.strip():
-                        row_text.append(cell.text.strip())
-                if row_text:
-                    slide_content.append(" | ".join(row_text))
-        
-        # Handle text frames (which might contain paragraphs with runs)
-        if hasattr(shape, "text_frame"):
-            text_frame = shape.text_frame
-            for paragraph in text_frame.paragraphs:
-                paragraph_text = paragraph.text.strip()
-                if paragraph_text:
-                    slide_content.append(paragraph_text)
-    
-    return "\n".join(slide_content) if slide_content else None
 
 
 def generate_transcript(slide_content, previous_transcripts=None, llm_client=None, target_language=None, model=None):
@@ -97,14 +65,21 @@ def generate_transcript(slide_content, previous_transcripts=None, llm_client=Non
     **Safety Imperatives**:  
     ‼ Preserve safety-critical wording verbatim  
     ‼ Verbalize technical caveats explicitly  
-    ‼ If term conflict: Prioritize slide terminology       
+    ‼ If term conflict: Prioritize slide terminology  
+    
+    **FORMAT RESTRICTION (CRITICAL)**:
+    1. Output ONLY the actual transcript text
+    2. DO NOT include any introductory phrases like "Here is the transcript:" or "以下是转录内容:"
+    3. DO NOT include any explanations or notes after the transcript
+    4. DO NOT use quotation marks to wrap the entire transcript
+    5. Return ONLY the pure speech text that would be read aloud
     """
     
     return llm_client.generate(prompt, model)
 
 
-def process_presentation(pptx_path, output_base_dir=None, target_language=None, model=None):
-    """Process a presentation and generate transcripts for all slides."""
+def process_presentation(pptx_path, output_base_dir=None, target_language=None, model=None, llm_provider=None, slides=None):
+    """Process a presentation and generate transcripts for specified slides."""
     # Load the presentation
     presentation = Presentation(pptx_path)
     
@@ -116,12 +91,16 @@ def process_presentation(pptx_path, output_base_dir=None, target_language=None, 
 
     # Initialize the appropriate LLM client based on model choice
     config = load_config()
-    llm_client = get_llm_provider(model, config)
+    llm_client = get_llm_provider(model, config, provider=llm_provider)
 
     # Process each slide
     transcripts = []
     previous_transcripts = []
     for idx, slide in enumerate(presentation.slides, 1):
+        if slides and idx not in slides:
+            print(f"Skipping slide {idx} (not in specified slides)")
+            continue
+        
         # Extract all text from the slide
         slide_content = extract_slide_content(slide)
         
@@ -174,6 +153,15 @@ def process_presentation(pptx_path, output_base_dir=None, target_language=None, 
 
 def main():
     """Main function to run the transcript generator."""
+    from config.parse_args import parse_args
+    
+    # Get arguments from parse_args and filter what we need
+    args = parse_args()
+    use_storm = args.use_storm
+    language = args.language
+    model = args.model
+    llm_provider = args.llm_provider
+    
     paths = get_project_paths()
     ensure_directory(paths["input_dir"])
     ensure_directory(paths["output_dir"])
@@ -185,17 +173,30 @@ def main():
         print(f"No PowerPoint files found in {paths['input_dir']}")
         return
 
+    # Import storm module only if needed
+    if use_storm:
+        try:
+            from .transcript_storm import process_presentation_with_storm
+            print("Using Storm-enhanced approach for transcript generation...")
+        except ImportError:
+            print("Warning: Storm module not found. Falling back to standard approach.")
+            use_storm = False
+
     # Process each PowerPoint file
     for pptx_file in pptx_files:
         print(f"Processing {pptx_file.name}...")
-        print("This will extract content from slides and any unpolished notes, then generate transcripts.")
-        print("The transcripts will be saved to the notes section of a new PPTX file in the output directory.")
         
         output_dir = paths["output_dir"] / pptx_file.stem
-        process_presentation(pptx_file, output_dir)
+        
+        if use_storm:
+            print("Using enhanced verification workflow to reduce hallucinations.")
+            process_presentation_with_storm(pptx_file, output_dir, language, model, llm_provider=llm_provider)
+        else:
+            print("Using standard transcript generation workflow.")
+            process_presentation(pptx_file, output_dir, language, model, llm_provider=llm_provider)
         
         print(f"Transcript generation complete for {pptx_file.name}")
-        print(f"Check the output directory for the PPTX file with transcripts in the notes section.")
+        print("Check the output directory for the PPTX file with transcripts in the notes section.")
 
 
 if __name__ == "__main__":

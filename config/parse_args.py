@@ -33,14 +33,6 @@ def parse_args():
     parser.add_argument(
         "--model",
         type=str,
-        choices=[
-            "deepseek-chat",
-            "deepseek-reasoner",
-            "gpt-4o",
-            "gpt-4o-mini",
-            "gemini-2.0-flash",
-            "o3-mini",
-        ],
         default="gpt-4o-mini",
         help="Model to use for transcript generation",
     )

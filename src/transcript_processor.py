@@ -36,7 +36,7 @@ def process_presentation_with_storm(
     # Set up output directory structure
     if not output_base_dir:
         paths = get_project_paths()
-        output_base_dir = paths["noted_dir"]
+        output_base_dir = paths["processed_dir"]
     ensure_directory(output_base_dir)
     
     # Set up logging

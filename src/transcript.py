@@ -86,7 +86,7 @@ def process_presentation(pptx_path, output_base_dir=None, target_language=None, 
     # Set up output directory structure
     if not output_base_dir:
         paths = get_project_paths()
-        output_base_dir = paths["noted_dir"]
+        output_base_dir = paths["processed_dir"]
     ensure_directory(output_base_dir)
 
     # Initialize the appropriate LLM client based on model choice

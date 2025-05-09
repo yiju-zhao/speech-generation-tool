@@ -30,7 +30,7 @@ def main():
     # Get project paths
     paths = get_project_paths()
     ensure_directory(paths["raw_dir"])
-    ensure_directory(paths["noted_dir"])
+    ensure_directory(paths["processed_dir"])
     ensure_directory(paths["audio_dir"])
 
     # Find PowerPoint file
@@ -57,10 +57,10 @@ def main():
             noted_pptx = pptx_path
         else:
             # Look for the noted version in the noted directory
-            noted_pptx = paths["noted_dir"] / f"{pptx_path.stem}_noted.pptx"
+            noted_pptx = paths["processed_dir"] / f"{pptx_path.stem}_noted.pptx"
             if not noted_pptx.exists():
                 print(
-                    f"No noted version of {pptx_path.name} found in {paths['noted_dir']}"
+                    f"No noted version of {pptx_path.name} found in {paths['processed_dir']}"
                 )
                 print("Please run the transcript generation process first.")
                 return
@@ -85,7 +85,7 @@ def main():
 
         noted_pptx_path = process_presentation_with_storm(
             pptx_path=pptx_path,
-            output_base_dir=paths["noted_dir"],
+            output_base_dir=paths["processed_dir"],
             target_language=language,
             model=model,
             enable_search=not disable_search,
@@ -97,7 +97,7 @@ def main():
         print(f"Language: {language}, Model: {model}, Provider: {llm_provider}")
         noted_pptx_path = standard_process_presentation(
             pptx_path=pptx_path,
-            output_base_dir=paths["noted_dir"],
+            output_base_dir=paths["processed_dir"],
             target_language=language,
             model=model,
             llm_provider=llm_provider,

@@ -6,6 +6,10 @@ import time
 import requests
 import openai
 from pathlib import Path
+from elevenlabs.client import ElevenLabs
+from elevenlabs import play
+elevenlabs_available = True
+
 
 from .utils import (
     load_config,
@@ -125,6 +129,36 @@ def generate_audio_with_minimax(transcript, slide_number, output_dir, api_key=No
         return None
 
 
+def generate_audio_with_elevenlabs(transcript, slide_number, output_dir, api_key=None, voice_id="PZ3PfumfdpqvMhDFh6ea", model_id="eleven_multilingual_v2", output_format="mp3_44100_128"):
+    """Generate audio for a transcript using ElevenLabs TTS API."""
+
+    if not api_key:
+        config = load_config()
+        api_key = config.get("elevenlabs_api_key")
+    if not api_key:
+        print("No ElevenLabs API key found. Please set it in your config.toml.")
+        return None
+
+    try:
+        print(f"Generating audio for slide {slide_number} using ElevenLabs...")
+        client = ElevenLabs(api_key=api_key)
+        audio = client.text_to_speech.convert(
+            text=transcript,
+            voice_id=voice_id,
+            model_id=model_id,
+            output_format=output_format,
+        )
+        output_file = output_dir / f"slide_{slide_number}.mp3"
+        with open(output_file, "wb") as f:
+            for chunk in audio:
+                f.write(chunk)
+        print(f"Successfully generated audio for slide {slide_number} using ElevenLabs")
+        return output_file
+    except Exception as e:
+        print(f"Error generating audio with ElevenLabs for slide {slide_number}: {str(e)}")
+        return None
+
+
 def generate_audio(
     transcript, slide_number, output_dir, provider="minimax", api_key=None
 ):
@@ -135,14 +169,17 @@ def generate_audio(
         transcript (str): The transcript to convert to audio
         slide_number (int): The slide number
         output_dir (Path): Directory to save the audio file
-        provider (str): The TTS provider to use ('minimax' or 'openai')
+        provider (str): The TTS provider to use ('minimax', 'openai', or 'elevenlabs')
         api_key (str, optional): API key for the provider
 
     Returns:
         Path: Path to the generated audio file, or None if generation failed
     """
-    if provider.lower() == "openai":
+    provider = provider.lower()
+    if provider == "openai":
         return generate_audio_with_openai(transcript, slide_number, output_dir, api_key)
+    elif provider == "elevenlabs":
+        return generate_audio_with_elevenlabs(transcript, slide_number, output_dir, api_key)
     else:  # Default to minimax
         return generate_audio_with_minimax(
             transcript, slide_number, output_dir, api_key
@@ -156,25 +193,26 @@ def process_pptx_for_audio(pptx_path, output_dir=None, provider="minimax"):
     Args:
         pptx_path (Path or str): Path to the PowerPoint file
         output_dir (Path or str, optional): Directory to save the audio files
-        provider (str): The TTS provider to use ('minimax' or 'openai')
+        provider (str): The TTS provider to use ('minimax', 'openai', or 'elevenlabs')
 
     Returns:
         Path: Path to the directory containing the generated audio files
     """
     pptx_path = Path(pptx_path)
-
-    # Extract transcripts from PowerPoint
-    print(f"Extracting transcripts from {pptx_path.name}...")
-    transcripts = extract_transcripts_from_pptx(pptx_path)
-
-    # Set up output directory - use the same directory as the PPTX file by default
+    paths = get_project_paths()
+    audio_base_dir = paths["audio_dir"]
+    pptx_stem = pptx_path.stem
+    # Set up output directory: data/audio/<pptx_stem>
     if not output_dir:
-        # Use the same directory as the PPTX file
-        output_dir = pptx_path.parent
+        output_dir = Path(audio_base_dir) / pptx_stem
     else:
         output_dir = Path(output_dir)
 
     ensure_directory(output_dir)
+
+    # Extract transcripts from PowerPoint
+    print(f"Extracting transcripts from {pptx_path.name}...")
+    transcripts = extract_transcripts_from_pptx(pptx_path)
 
     # Check if we have any transcripts
     valid_transcripts = [t for t in transcripts if t["transcript"]]
@@ -213,29 +251,33 @@ def process_pptx_for_audio(pptx_path, output_dir=None, provider="minimax"):
 def main():
     """Main function to run the voice generator."""
     paths = get_project_paths()
-    ensure_directory(paths["noted_dir"])
+    ensure_directory(paths["processed_dir"])
 
     # Ask user which TTS provider to use
     print("\nWhich Text-to-Speech provider would you like to use?")
     print("1. Minimax (default, better for Chinese)")
     print("2. OpenAI (better for English)")
+    print("3. ElevenLabs (high quality, supports many languages)")
 
-    provider_choice = input("Enter your choice (1 or 2): ").strip()
+    provider_choice = input("Enter your choice (1, 2, or 3): ").strip()
 
     # Set the provider based on user choice
     if provider_choice == "2":
         provider = "openai"
         print("Using OpenAI TTS")
+    elif provider_choice == "3":
+        provider = "elevenlabs"
+        print("Using ElevenLabs TTS")
     else:
         provider = "minimax"
         print("Using Minimax TTS")
 
-    # Look for PowerPoint files in the noted directory
-    noted_dir = paths["noted_dir"]
-    pptx_files = list(noted_dir.glob("*_noted.pptx"))
+    # Look for PowerPoint files in the processed directory
+    processed_dir = paths["processed_dir"]
+    pptx_files = list(processed_dir.glob("*_noted.pptx"))
 
     if not pptx_files:
-        print(f"No PowerPoint files with transcripts found in {noted_dir}")
+        print(f"No PowerPoint files with transcripts found in {processed_dir}")
         return
 
     # Process each PowerPoint file

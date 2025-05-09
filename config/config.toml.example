@@ -3,9 +3,15 @@
 
 # API Keys
 # Replace these with your actual API keys from the respective services
-openai_api_key = "sk-..."  # OpenAI API key starting with 'sk-'
+openai_api_key = "sk-..."  # OpenAI API key
 minimax_api_key = "eyJ..."  # MiniMax API key
 deepseek_api_key = "sk-..."  # DeepSeek API key
+
+# Tavily API Key
+tavily_api_key = "tvly-..."  # Tavily API key
+
+# ElevenLabs API Key
+elevenlabs_api_key = "elevenlabs-..."  # ElevenLabs API key
 
 # Model Configuration
 [models]

@@ -48,7 +48,7 @@ def get_project_paths():
     return {
         "base_dir": base_dir,
         "raw_dir": base_dir / "data" / "raw",
-        "noted_dir": base_dir / "data" / "noted",
+        "processed_dir": base_dir / "data" / "processed",
         "audio_dir": base_dir / "data" / "audio",
         "config_dir": base_dir / "config",
         "notebooks_dir": base_dir / "notebooks",

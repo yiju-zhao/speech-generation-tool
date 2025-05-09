@@ -47,7 +47,7 @@ def parse_args():
     parser.add_argument(
         "--tts-provider",
         type=str,
-        choices=["minimax", "openai"],
+        choices=["minimax", "openai", "elevenlabs"],
         default="minimax",
         help="Text-to-speech provider to use (default: minimax, which is better for Chinese; openai is better for English)",
     )

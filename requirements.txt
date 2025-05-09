@@ -1,11 +1,11 @@
-python-pptx>=0.6.21
-openai>=1.0.0
-python-dotenv>=0.19.0
-requests>=2.31.0
+python-pptx
+openai
+python-dotenv
+requests
 comtypes
 pdf2image
-Pillow>=9.0.0
-reportlab>=4.0.0  # For PDF generation
+Pillow
+reportlab
 toml
 google-genai
 dspy-ai
@@ -15,3 +15,5 @@ sentence-transformers
 scikit-learn
 numpy
 elevenlabs
+hf_xet
+pydub

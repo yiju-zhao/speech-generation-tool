@@ -10,10 +10,8 @@ class SlideInformation:
 
     queries: List[str] = field(default_factory=list)
     facts: List[str] = field(default_factory=list)
-    verified_content: str = ""
     original_content: str = ""
     unpolished_notes: str = ""
     slide_number: int = 0
     knowledge_items: List[KnowledgeItem] = field(default_factory=list)
     search_results: List[Dict] = field(default_factory=list)
-

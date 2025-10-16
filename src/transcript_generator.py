@@ -3,6 +3,7 @@ Transcript generation and review modules
 """
 
 import json
+import re
 import logging
 from functools import lru_cache
 from typing import List, Optional, Any, Dict
@@ -320,32 +321,32 @@ class TranscriptReviewer:
           - revised_transcript: str
         """
 
-        # Extract ground truth and metadata
-        verified_content = ""
+        # Extract ground truth and metadata (use original slide text)
+        ground_content = ""
         verified_facts = []
         slide_position = "unknown"
         slide_type = "unknown"
 
         if slide_info:
             if isinstance(slide_info, dict):
-                verified_content = slide_info.get("content", "")
+                ground_content = slide_info.get("original_content", "")
                 verified_facts = slide_info.get("facts", [])
                 slide_position = slide_info.get("position", slide_position)
                 slide_type = slide_info.get("type", slide_type)
             else:
-                verified_content = getattr(slide_info, "content", "")
+                ground_content = getattr(slide_info, "original_content", "")
                 verified_facts = getattr(slide_info, "facts", [])
                 slide_position = getattr(slide_info, "position", slide_position)
                 slide_type = getattr(slide_info, "type", slide_type)
 
-        facts_text = "\n".join(f"- {f}" for f in verified_facts) if verified_facts else verified_content
+        facts_text = "\n".join(f"- {f}" for f in verified_facts) if verified_facts else ground_content
 
         # Build review prompt
         prompt = f"""
 ROLE: Factuality and Consistency Auditor.
 
-VERIFIED SLIDE CONTENT (ground truth):
-{verified_content}
+ORIGINAL SLIDE CONTENT (ground truth):
+{ground_content}
 
 VERIFIED FACTS (if any):
 {facts_text}
@@ -358,17 +359,18 @@ SLIDE METADATA:
 - type: {slide_type}
 
 TASK:
-1) Identify any claims in the GENERATED TRANSCRIPT that are NOT supported by the VERIFIED SLIDE CONTENT.
+1) Identify any claims in the GENERATED TRANSCRIPT that are NOT supported by the ORIGINAL SLIDE CONTENT.
    For each, provide the claim text and a short explanation why it is unsupported.
-2) Identify any important points present in the VERIFIED SLIDE CONTENT that are missing from the transcript (omissions).
+2) Identify any important points present in the ORIGINAL SLIDE CONTENT that are missing from the transcript (omissions).
 3) Confirm whether the transcript follows the same order as the slide content.
 4) Provide a short presentation_quality_score (1-10) and list style issues if present.
 5) Produce a revised_transcript that:
    - Is presentation-ready and natural sounding for speech.
-   - Is 100% grounded in the VERIFIED SLIDE CONTENT (no added facts).
+   - Is 100% grounded in the ORIGINAL SLIDE CONTENT (no added facts).
    - Includes ALL verified facts (do not omit any verified content).
    - Keeps the same sequence as the slide.
    - Obeys the word limits (title/thank-you/content).
+   - Is ONE coherent paragraph; no bullets, numbering, or headings.
 
 OUTPUT:
 Return a single valid JSON object with keys:
@@ -396,19 +398,57 @@ Return a single valid JSON object with keys:
                     "structural_issues": [],
                     "style_issues": [{"issue": "Failed to parse LLM reviewer output; returned raw text snippet", "example": raw[:300]}],
                 },
-                # Best-effort revised transcript: clamp down to verified content (shorten if needed)
-                "revised_transcript": self._force_clamp_to_verified(transcript, verified_content, slide_type),
+                # Best-effort revised transcript: clamp down to original slide content (shorten if needed)
+                "revised_transcript": self._force_clamp_to_content(transcript, ground_content, slide_type),
             }
+
+        # Ensure revised transcript is coherent speech, not a fact list
+        revised = review.get("revised_transcript", "").strip() or transcript
+        if self._looks_list_like(revised):
+            polish_prompt = f"""
+Rewrite the transcript into ONE coherent, natural-sounding spoken paragraph.
+- No bullets, numbering, or headings.
+- Use smooth transitions; avoid list-like phrasing.
+- Stay strictly grounded in the ORIGINAL SLIDE CONTENT; do not add facts.
+
+ORIGINAL SLIDE CONTENT:
+{ground_content}
+
+DRAFT TO POLISH:
+{revised}
+
+OUTPUT: Single paragraph only.
+"""
+            try:
+                polished = self.llm_client.generate(polish_prompt, self.model).strip()
+                if polished:
+                    review["revised_transcript"] = polished
+            except Exception:
+                # keep the existing revised transcript on failure
+                pass
 
         return review
 
-    def _force_clamp_to_verified(self, transcript: str, verified_content: str, slide_type: str) -> str:
+    def _looks_list_like(self, text: str) -> bool:
+        if not text:
+            return False
+        # Common bullet/numbered list patterns
+        bullet_pat = re.compile(r"(^|\n)\s*(?:[-•\u2022\*]|\d+[.)])\s+", re.MULTILINE)
+        if bullet_pat.search(text):
+            return True
+        # Excessive short line breaks suggest lists
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        if len(lines) >= 3 and sum(1 for ln in lines if len(ln) <= 60) >= len(lines) - 1:
+            return True
+        return False
+
+    def _force_clamp_to_content(self, transcript: str, content: str, slide_type: str) -> str:
         """
-        Conservative fallback: produce a very short transcript that only reads the verified content.
+        Conservative fallback: produce a very short transcript that only reads the original content.
         This aims to avoid hallucinations in failure modes.
         """
-        # If verified_content is short enough, return it verbatim (trim to word limit)
-        if not verified_content:
+        # If content is short enough, return it verbatim (trim to word limit)
+        if not content:
             return transcript
 
         word_limit = 200
@@ -417,10 +457,10 @@ Return a single valid JSON object with keys:
         elif slide_type in ("thank_you", "q_and_a", "q&a"):
             word_limit = 50
 
-        words = verified_content.split()
+        words = content.split()
         if len(words) <= word_limit:
             # Make it speakable: a minimal transformation for oral delivery
-            short = verified_content.strip()
+            short = content.strip()
             # Replace newlines with short pauses (commas) for flow
             short = " ".join(short.splitlines())
             return short

@@ -172,16 +172,14 @@ def process_presentation_with_storm(
                 logging.error(f"Knowledge retrieval failed for slide {idx}: {e}")
                 slide_info.knowledge_items = []
 
-        # Extract verified facts and synthesize content
+        # Extract verified facts
         try:
             slide_info.facts = knowledge_curator.extract_verified_facts(
                 combined_content, slide_info.queries, slide_info.knowledge_items
             )
-            slide_info.verified_content = knowledge_curator.synthesize_verified_content(slide_info)
         except Exception as e:
             logging.error(f"Error verifying content for slide {idx}: {e}")
             slide_info.facts = combined_content.split("\n")
-            slide_info.verified_content = combined_content
 
         # --------------- Step 2: Transcript Generation ---------------
         try:
@@ -193,7 +191,7 @@ def process_presentation_with_storm(
             )
         except Exception as e:
             logging.error(f"Transcript generation failed: {e}")
-            transcript = slide_info.verified_content
+            transcript = slide_info.original_content or combined_content
 
         # --------------- Step 3: Transcript Review ---------------
         try:
@@ -209,7 +207,6 @@ def process_presentation_with_storm(
             "slide_number": idx,
             "original_content": slide_content,
             "unpolished_notes": unpolished_notes,
-            "verified_content": slide_info.verified_content,
             "verified_facts": slide_info.facts,
             "transcript": final_transcript,
             "accuracy_review": review,

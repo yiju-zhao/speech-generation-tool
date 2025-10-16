@@ -14,8 +14,7 @@ try:
 except Exception:
     _SEM_MODEL = None
 
-# Configure basic logging
-logging.basicConfig(level=logging.INFO)
+# Module-level logger only; configuration is owned by the caller/processor
 logger = logging.getLogger(__name__)
 
 

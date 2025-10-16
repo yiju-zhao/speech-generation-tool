@@ -46,15 +46,24 @@ def process_presentation_with_storm(
     )
 
     # ------------------- Logging setup -------------------
+    # Ensure clean slate so file handler is respected and console is not duplicated
+    root_logger = logging.getLogger()
+    for h in list(root_logger.handlers):
+        root_logger.removeHandler(h)
+
+    log_format = "%(asctime)s - %(levelname)s - %(message)s"
+    date_format = "%Y-%m-%d %H:%M:%S"
     logging.basicConfig(
         filename=log_path,
         level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+        format=log_format,
+        datefmt=date_format,
     )
+
     console = logging.StreamHandler()
     console.setLevel(logging.INFO)
-    logging.getLogger().addHandler(console)
+    console.setFormatter(logging.Formatter(log_format, date_format))
+    root_logger.addHandler(console)
 
     logging.info(f"Starting processing: {pptx_path}")
 

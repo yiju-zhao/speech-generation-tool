@@ -4,18 +4,12 @@ Knowledge base management and retrieval for enhancing transcript generation with
 
 import json
 import logging
-import os
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 
-# Required libraries: pip install sentence-transformers faiss-cpu
-import numpy as np
 from sentence_transformers import SentenceTransformer
-try:
-    import faiss
-except ImportError:
-    raise ImportError("FAISS is not installed. Please run 'pip install faiss-cpu' or 'pip install faiss-gpu'.")
+from sklearn.metrics.pairwise import cosine_similarity
 
 from src.web_search import TavilySearchRetriever
 
@@ -26,6 +20,7 @@ class KnowledgeItem:
     content: str
     source: str
     metadata: Dict[str, Any] = field(default_factory=dict)
+    embeddings: Optional[List[float]] = None
 
     def to_dict(self):
         """Convert to dictionary for serialization."""
@@ -33,6 +28,7 @@ class KnowledgeItem:
             "content": self.content,
             "source": self.source,
             "metadata": self.metadata,
+            # Don't store embeddings in JSON
         }
 
     @classmethod
@@ -46,109 +42,131 @@ class KnowledgeItem:
 
 
 class KnowledgeBase:
-    """
-    Manages a collection of knowledge items using a FAISS index for efficient, persistent search.
-    """
-    def __init__(self, knowledge_dir: str, model_name: str = "paraphrase-MiniLM-L6-v2"):
-        """
-        Initialize the knowledge base. If a pre-built index exists, it's loaded.
-        Otherwise, a new index is created from the JSON files in the knowledge_dir.
-        """
-        self.knowledge_dir = Path(knowledge_dir)
-        self.index_path = self.knowledge_dir / "knowledge.index"
-        self.metadata_path = self.knowledge_dir / "knowledge_metadata.json"
-        
-        self.items: List[KnowledgeItem] = []
-        self.index = None
-        self.encoder = SentenceTransformer(model_name)
+    """Manages a collection of knowledge items and provides retrieval functionality."""
 
-        if self.index_path.exists() and self.metadata_path.exists():
-            logging.info(f"Loading existing knowledge base from {self.knowledge_dir}...")
-            self._load_from_disk()
-        elif self.knowledge_dir.exists():
-            logging.warning(f"No existing index found. Building new knowledge base from {self.knowledge_dir}...")
-            self._build_and_save_index()
-        else:
-            logging.error(f"Knowledge directory {self.knowledge_dir} does not exist. Knowledge base is empty.")
+    def __init__(self, knowledge_dir=None):
+        """Initialize the knowledge base."""
+        self.items = []
+        self.encoder = None
+        self.embeddings = None
 
-    def _load_from_disk(self):
-        """Loads the FAISS index and metadata from disk."""
-        try:
-            self.index = faiss.read_index(str(self.index_path))
-            with open(self.metadata_path, "r") as f:
-                items_data = json.load(f)
-                self.items = [KnowledgeItem.from_dict(data) for data in items_data]
-            
-            # Ensure the number of items matches the index size
-            if self.index.ntotal != len(self.items):
-                logging.error("Index and metadata mismatch. Rebuilding is recommended.")
-                # You could force a rebuild here if desired
-            else:
-                logging.info(f"Successfully loaded {len(self.items)} items into the knowledge base.")
-        except Exception as e:
-            logging.error(f"Failed to load knowledge base from disk: {e}. It may be corrupted.")
+        if knowledge_dir:
+            self.load_from_directory(knowledge_dir)
 
-    def _build_and_save_index(self):
-        """Loads data from JSONs, builds a FAISS index, and saves it to disk."""
-        # Step 1: Load all knowledge items from JSON files
-        source_items = self._load_source_documents()
-        if not source_items:
-            logging.warning("No source documents found to build the knowledge base.")
+    def load_from_directory(self, directory_path):
+        """Load knowledge items from all JSON files in a directory."""
+        directory = Path(directory_path)
+        if not directory.exists():
+            logging.warning(f"Knowledge directory {directory} does not exist.")
             return
 
-        self.items = source_items
-        contents = [item.content for item in self.items]
-
-        # Step 2: Compute embeddings
-        logging.info(f"Computing embeddings for {len(contents)} documents...")
-        embeddings = self.encoder.encode(contents, show_progress_bar=True)
-        embedding_dim = embeddings.shape[1]
-
-        # Step 3: Create and populate the FAISS index
-        self.index = faiss.IndexFlatL2(embedding_dim) # Using a simple L2 distance index
-        self.index.add(np.array(embeddings, dtype=np.float32))
-
-        # Step 4: Save the index and metadata to disk
-        try:
-            faiss.write_index(self.index, str(self.index_path))
-            with open(self.metadata_path, "w") as f:
-                json.dump([item.to_dict() for item in self.items], f)
-            logging.info(f"Successfully built and saved new knowledge base to {self.knowledge_dir}")
-        except Exception as e:
-            logging.error(f"Failed to save new knowledge base: {e}")
-
-    def _load_source_documents(self) -> List[KnowledgeItem]:
-        """Scans the directory for JSON files and loads them into KnowledgeItem objects."""
-        all_items = []
-        for file_path in self.knowledge_dir.glob("*.json"):
-            # Exclude the metadata file we save
-            if file_path.name == "knowledge_metadata.json":
-                continue
+        count = 0
+        for file_path in directory.glob("*.json"):
             try:
                 with open(file_path, "r") as f:
                     data = json.load(f)
-                if isinstance(data, list):
-                    for item_data in data:
-                        all_items.append(KnowledgeItem.from_dict(item_data))
-                elif isinstance(data, dict) and "items" in data:
-                    for item_data in data["items"]:
-                        all_items.append(KnowledgeItem.from_dict(item_data))
-            except Exception as e:
-                logging.error(f"Error loading source knowledge file {file_path}: {e}")
-        return all_items
 
-    def search(self, query: str, top_k: int = 5) -> List[KnowledgeItem]:
-        """Search the knowledge base with a natural language query using the FAISS index."""
-        if not self.index or len(self.items) == 0:
-            logging.warning("Knowledge base is not initialized or is empty. Cannot search.")
+                # Handle different possible JSON structures
+                if isinstance(data, list):
+                    # List of knowledge items
+                    for item_data in data:
+                        self.add_item(KnowledgeItem.from_dict(item_data))
+                    count += len(data)
+                elif isinstance(data, dict) and "items" in data:
+                    # Dict with "items" key containing a list of knowledge items
+                    for item_data in data["items"]:
+                        self.add_item(KnowledgeItem.from_dict(item_data))
+                    count += len(data["items"])
+                elif "content" in data and "source" in data:
+                    # Single knowledge item
+                    self.add_item(KnowledgeItem.from_dict(data))
+                    count += 1
+            except Exception as e:
+                logging.error(f"Error loading knowledge file {file_path}: {e}")
+
+        logging.info(f"Loaded {count} knowledge items from {directory}")
+
+    def add_item(self, item):
+        """Add a knowledge item to the base."""
+        self.items.append(item)
+        # Invalidate cached embeddings when adding new items
+        self.embeddings = None
+
+    def add_items(self, items):
+        """Add multiple knowledge items to the base."""
+        self.items.extend(items)
+        # Invalidate cached embeddings when adding new items
+        self.embeddings = None
+
+    def init_encoder(self):
+        """Initialize the sentence encoder for semantic search."""
+
+        if self.encoder is None:
+            try:
+                self.encoder = SentenceTransformer("paraphrase-MiniLM-L6-v2")
+                logging.info("Sentence encoder initialized successfully.")
+            except Exception as e:
+                logging.error(f"Error initializing sentence encoder: {e}")
+                raise
+
+    def compute_embeddings(self):
+        """Compute embeddings for all knowledge items."""
+        if not self.items:
+            logging.warning("No knowledge items to encode.")
+            return
+
+        self.init_encoder()
+
+        contents = [item.content for item in self.items]
+        self.embeddings = self.encoder.encode(contents)
+
+        # Store embeddings in each item
+        for i, item in enumerate(self.items):
+            item.embeddings = self.embeddings[i].tolist()
+
+    def search(self, query, top_k=5):
+        """Search the knowledge base with a natural language query."""
+        if not self.items:
+            logging.warning("No knowledge items to search.")
             return []
 
-        query_embedding = self.encoder.encode([query])
-        distances, indices = self.index.search(np.array(query_embedding, dtype=np.float32), top_k)
-        
-        # Filter out invalid indices if any
-        valid_indices = [i for i in indices[0] if i != -1]
-        return [self.items[i] for i in valid_indices]
+        # Compute embeddings if not already done
+        if self.embeddings is None:
+            self.compute_embeddings()
+
+        self.init_encoder()
+        query_embedding = self.encoder.encode(query)
+
+        similarities = cosine_similarity([query_embedding], self.embeddings)[0]
+        top_indices = similarities.argsort()[-top_k:][::-1]
+
+        return [self.items[i] for i in top_indices]
+
+    def keyword_search(self, keywords, top_k=5):
+        """Simple keyword-based search."""
+        if not self.items:
+            return []
+
+        # Split the keywords string into individual keywords
+        if isinstance(keywords, str):
+            keywords = [k.strip().lower() for k in keywords.split() if k.strip()]
+
+        results = []
+        for item in self.items:
+            content_lower = item.content.lower()
+            score = sum(1 for keyword in keywords if keyword in content_lower)
+            if score > 0:
+                results.append((score, item))
+
+        # Sort by score (descending) and return top_k items
+        results.sort(reverse=True, key=lambda x: x[0])
+        return [item for _, item in results[:top_k]]
+
+    def save_to_file(self, file_path, indent=None):
+        """Save the knowledge base to a JSON file."""
+        items_data = [item.to_dict() for item in self.items]
+        with open(file_path, "w") as f:
+            json.dump({"items": items_data}, f, indent=indent)
 
     def __len__(self):
         return len(self.items)
@@ -181,7 +199,7 @@ class KnowledgeRetriever:
 
         # First, try retrieving from the local knowledge base
         kb_results = []
-        if self.knowledge_base and len(self.knowledge_base) > 0:
+        if len(self.knowledge_base) > 0:
             logging.info(f"Retrieving from knowledge base for slide {slide_number} ({len(self.knowledge_base)} items in KB)")
             try:
                 kb_results = self.knowledge_base.search(slide_content, top_k=max_items)
@@ -317,10 +335,10 @@ class KnowledgeRetriever:
             )
             results.append(placeholder_item)
             
-        # # Sort results to prioritize non-placeholders
-        # sorted_results = sorted(
-        #     results, 
-        #     key=lambda x: 0 if x.source != "slide_content" else 1
-        # )
+        # Sort results to prioritize non-placeholders
+        sorted_results = sorted(
+            results, 
+            key=lambda x: 0 if x.source != "slide_content" else 1
+        )
         
-        return results
+        return sorted_results[:max_items]  # Limit to max_items

@@ -5,6 +5,7 @@ Main processor for handling presentations with the Storm approach
 import os
 import json
 import logging
+from pathlib import Path
 from pptx import Presentation
 
 from .utils import (
@@ -30,185 +31,161 @@ def process_presentation_with_storm(
     slides=None,
 ):
     """Process a presentation using Storm-inspired approach to reduce hallucinations."""
-    # Load the presentation
     presentation = Presentation(pptx_path)
 
-    # Set up output directory structure
+    # ------------------- Directory setup -------------------
     if not output_base_dir:
         paths = get_project_paths()
         output_base_dir = paths["processed_dir"]
     ensure_directory(output_base_dir)
-    
-    # Set up logging
-    log_directory = os.path.join(output_base_dir, "logs")
-    ensure_directory(log_directory)
-    log_filename = f"{os.path.splitext(os.path.basename(pptx_path))[0]}_processing.log"
-    log_path = os.path.join(log_directory, log_filename)
-    
-    # Configure logging with console output
+
+    log_dir = os.path.join(output_base_dir, "logs")
+    ensure_directory(log_dir)
+    log_path = os.path.join(
+        log_dir, f"{os.path.splitext(os.path.basename(pptx_path))[0]}_processing.log"
+    )
+
+    # ------------------- Logging setup -------------------
     logging.basicConfig(
         filename=log_path,
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    logging.getLogger().addHandler(console_handler)
-    
-    logging.info(f"Starting presentation processing for: {pptx_path}")
-    
-    # Load config and set up resources
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    logging.getLogger().addHandler(console)
+
+    logging.info(f"Starting processing: {pptx_path}")
+
+    # ------------------- Config setup -------------------
     config = load_config()
     llm_client = get_llm_provider(model, config, provider=llm_provider)
     tavily_api_key = config.get("tavily_api_key", None)
     knowledge_base_dir = config.get("knowledge_base_dir")
-    
-    # Create file-specific subdirectory in knowledge base
-    if knowledge_base_dir:
-        file_name = os.path.splitext(os.path.basename(pptx_path))[0]
-        knowledge_base_dir = os.path.join(knowledge_base_dir, file_name)
-        ensure_directory(knowledge_base_dir)
-        logging.info(f"Knowledge base will be stored in: {knowledge_base_dir}")
-    
-    # Validate API key if web search is enabled
-    if enable_search and not tavily_api_key:
-        logging.warning("Web search is enabled but no Tavily API key found in config.toml. Disabling web search.")
-        enable_search = False
-    elif enable_search and not tavily_api_key.startswith(("tvly-", "tvly-dev-")):
-        logging.warning(f"Tavily API key format looks unusual: {tavily_api_key[:10]}... Consider checking the key.")
-    
-    # Ensure knowledge base directory exists if specified
-    if knowledge_base_dir:
-        ensure_directory(knowledge_base_dir)
 
-    # Initialize components
+    if knowledge_base_dir:
+        file_base = os.path.splitext(os.path.basename(pptx_path))[0]
+        knowledge_base_dir = os.path.join(knowledge_base_dir, file_base)
+        ensure_directory(knowledge_base_dir)
+        logging.info(f"Knowledge base directory: {knowledge_base_dir}")
+
+    # ------------------- Validation -------------------
+    if enable_search and not tavily_api_key:
+        logging.warning("Web search enabled but no Tavily key found — disabling search.")
+        enable_search = False
+
+    # ------------------- Component setup -------------------
     knowledge_curator = TranscriptKnowledgeCurator(
         llm_client, model, enable_search=enable_search,
-        knowledge_base_dir=knowledge_base_dir, tavily_api_key=tavily_api_key,
+        knowledge_base_dir=knowledge_base_dir, tavily_api_key=tavily_api_key
     )
     transcript_generator = TranscriptGenerator(llm_client, model, target_language)
     transcript_reviewer = TranscriptReviewer(llm_client, model)
 
-    # Process tracking
+    # ------------------- Tracking setup -------------------
     transcripts = []
     previous_transcripts = []
     slide_information = {}
     all_knowledge_items = []
 
-    # Log processing information
     slide_count = len(presentation.slides)
-    logging.info(f"Processing {slide_count} slides with Storm approach")
-    logging.info(f"Using model: {model} with provider: {llm_provider or 'default'}")
-    logging.info(f"Web search: {'ENABLED' if enable_search else 'DISABLED'}, Knowledge base: {'ENABLED' if knowledge_base_dir else 'DISABLED'}")
-    
-    # Process each slide
+    logging.info(f"Total slides: {slide_count}")
+    logging.info(f"Model: {model}, Provider: {llm_provider or 'default'}")
+    logging.info(f"Web search: {'ON' if enable_search else 'OFF'}, Knowledge base: {knowledge_base_dir or 'OFF'}")
+
+    # ------------------- Process slides -------------------
     for idx, slide in enumerate(presentation.slides, 1):
         if slides and idx not in slides:
-            logging.info(f"Skipping slide {idx} (not in specified slides)")
+            logging.info(f"Skipping slide {idx} (not in target list)")
             continue
 
-        logging.info(f"Processing slide {idx} with Storm approach")
+        logging.info(f"\n--- Processing Slide {idx} ---")
 
-        # Extract slide content
+        # Extract slide text and notes
         slide_content = extract_slide_content(slide)
         unpolished_notes = ""
         if slide.has_notes_slide:
-            notes_text = slide.notes_slide.notes_text_frame.text
-            if notes_text.strip():
-                unpolished_notes = notes_text.strip()
-                logging.info(f"Found unpolished notes for slide {idx}")
+            notes = slide.notes_slide.notes_text_frame.text
+            if notes.strip():
+                unpolished_notes = notes.strip()
 
         if not slide_content and not unpolished_notes:
             logging.info(f"No content found for slide {idx}, skipping.")
             continue
 
-        # Combine content for processing
-        combined_content = slide_content or ""
-        if unpolished_notes:
-            combined_content += f"\n\nUNPOLISHED NOTES:\n{unpolished_notes}"
-
-        # Create slide information object
+        combined_content = f"{slide_content or ''}\n\nUNPOLISHED NOTES:\n{unpolished_notes}" if unpolished_notes else slide_content or ""
         slide_info = SlideInformation(
             original_content=slide_content or "",
             unpolished_notes=unpolished_notes,
             slide_number=idx,
         )
 
-        logging.info(f"Step 1: Knowledge curation for slide {idx}")
-        
-        # Step 1a: Generate search queries
-        try:
-            logging.info(f"Generating search queries for slide {idx}")
-            slide_info.queries = knowledge_curator.generate_search_queries(combined_content, idx)
-        except Exception as e:
-            logging.error(f"Error generating search queries for slide {idx}: {str(e)}")
-            slide_info.queries = []
+        # --------------- Step 1: Knowledge Curation ---------------
+        slide_kb_path = None
+        cached_items = []
+        if knowledge_base_dir:
+            slide_kb_path = Path(knowledge_base_dir) / f"slide_{idx:03d}_knowledge.json"
+            if slide_kb_path.exists():
+                try:
+                    data = json.load(open(slide_kb_path))
+                    cached_items = data.get("items", [])
+                    if cached_items:
+                        logging.info(f"Using cached knowledge for slide {idx} ({len(cached_items)} items)")
+                        from .knowledge_base import KnowledgeItem
+                        slide_info.knowledge_items = [KnowledgeItem.from_dict(d) for d in cached_items]
+                except Exception as e:
+                    logging.warning(f"Error loading cached knowledge for slide {idx}: {e}")
 
-        # Step 1b: Retrieve knowledge
-        try:
-            logging.info(f"Retrieving knowledge for slide {idx}")
-            slide_info.knowledge_items = knowledge_curator.perform_knowledge_retrieval(
-                combined_content, idx, slide_info.queries
-            )
-            logging.info(f"Retrieved {len(slide_info.knowledge_items)} knowledge items for slide {idx}")
-            
-            # Add to all knowledge items collection with slide context
-            for item in slide_info.knowledge_items:
-                if hasattr(item, 'metadata'):
-                    item.metadata['slide_number'] = idx
-                    if slide_content:
-                        item.metadata['slide_content_snippet'] = slide_content[:100] + "..." if len(slide_content) > 100 else slide_content
-                all_knowledge_items.append(item)
-        except Exception as e:
-            logging.error(f"Error retrieving knowledge for slide {idx}: {str(e)}")
-            slide_info.knowledge_items = []
+        # If no cached knowledge, perform new retrieval
+        if not cached_items:
+            try:
+                logging.info(f"Generating search queries for slide {idx}")
+                slide_info.queries = knowledge_curator.generate_search_queries(combined_content, idx)
+            except Exception as e:
+                logging.error(f"Error generating queries: {e}")
+                slide_info.queries = []
 
-        # Step 1c: Extract verified facts
+            try:
+                logging.info(f"Retrieving knowledge for slide {idx}")
+                slide_info.knowledge_items = knowledge_curator.perform_knowledge_retrieval(
+                    combined_content, idx, slide_info.queries
+                )
+                logging.info(f"Retrieved {len(slide_info.knowledge_items)} items for slide {idx}")
+            except Exception as e:
+                logging.error(f"Knowledge retrieval failed for slide {idx}: {e}")
+                slide_info.knowledge_items = []
+
+        # Extract verified facts and synthesize content
         try:
-            logging.info(f"Extracting verified facts for slide {idx}")
             slide_info.facts = knowledge_curator.extract_verified_facts(
                 combined_content, slide_info.queries, slide_info.knowledge_items
             )
-        except Exception as e:
-            logging.error(f"Error extracting facts for slide {idx}: {str(e)}")
-            slide_info.facts = combined_content.split("\n")
-
-        # Step 1d: Synthesize verified content
-        try:
-            logging.info(f"Synthesizing verified content for slide {idx}")
             slide_info.verified_content = knowledge_curator.synthesize_verified_content(slide_info)
         except Exception as e:
-            logging.error(f"Error synthesizing content for slide {idx}: {str(e)}")
+            logging.error(f"Error verifying content for slide {idx}: {e}")
+            slide_info.facts = combined_content.split("\n")
             slide_info.verified_content = combined_content
 
-        # Store slide information
-        slide_information[idx] = slide_info
-
-        # Step 2: Generate transcript
-        logging.info(f"Step 2: Transcript generation for slide {idx}")
+        # --------------- Step 2: Transcript Generation ---------------
         try:
             transcript = transcript_generator.generate_transcript(
                 slide_info.verified_content, previous_transcripts
             )
         except Exception as e:
-            logging.error(f"Error generating transcript for slide {idx}: {str(e)}")
+            logging.error(f"Transcript generation failed: {e}")
             transcript = slide_info.verified_content
 
-        # Step 3: Review transcript
-        logging.info(f"Step 3: Transcript review for slide {idx}")
+        # --------------- Step 3: Transcript Review ---------------
         try:
             review = transcript_reviewer.review_transcript(slide_info, transcript)
             final_transcript = review.get("revised_transcript", transcript)
         except Exception as e:
-            logging.error(f"Error reviewing transcript for slide {idx}: {str(e)}")
-            review = {
-                "accurate": True, "hallucinations": [], 
-                "corrections": [], "revised_transcript": transcript,
-            }
+            logging.error(f"Transcript review failed: {e}")
+            review = {"accurate": True, "hallucinations": [], "corrections": [], "revised_transcript": transcript}
             final_transcript = transcript
 
-        # Store results
+        # --------------- Step 4: Store results ---------------
         slide_data = {
             "slide_number": idx,
             "original_content": slide_content,
@@ -219,26 +196,23 @@ def process_presentation_with_storm(
             "accuracy_review": review,
         }
 
-        # Include simplified knowledge items
         if slide_info.knowledge_items:
-            simplified_knowledge = []
-            for item in slide_info.knowledge_items:
-                simplified_knowledge.append({
+            slide_data["knowledge_items"] = [
+                {
                     "content": item.content[:500] if len(item.content) > 500 else item.content,
                     "source": item.source,
                     "metadata": item.metadata,
-                })
-            slide_data["knowledge_items"] = simplified_knowledge
+                }
+                for item in slide_info.knowledge_items
+            ]
 
         transcripts.append(slide_data)
         previous_transcripts.append(final_transcript)
-        logging.info(f"Completed processing for slide {idx}")
 
-    # Write transcripts back to the PPTX file
+        logging.info(f"Slide {idx} processed successfully")
+
+    # ------------------- Save outputs -------------------
     noted_pptx_path = write_transcripts_to_pptx(pptx_path, transcripts, output_base_dir)
-    logging.info(f"PPTX with transcripts has been saved to {noted_pptx_path}")
-
-    # Save process data
     process_data = {
         "slides": transcripts,
         "metadata": {
@@ -251,13 +225,11 @@ def process_presentation_with_storm(
         },
     }
 
-    process_data_path = os.path.join(
-        output_base_dir,
-        f"{os.path.splitext(os.path.basename(pptx_path))[0]}_process_data.json",
+    json_path = os.path.join(
+        output_base_dir, f"{os.path.splitext(os.path.basename(pptx_path))[0]}_process_data.json"
     )
-    with open(process_data_path, "w") as f:
+    with open(json_path, "w") as f:
         json.dump(process_data, f, indent=2)
-    logging.info(f"Process data has been saved to {process_data_path}")
-    logging.info("Processing completed successfully")
 
-    return noted_pptx_path 
+    logging.info(f"Processing complete. Data saved to {json_path}")
+    return noted_pptx_path

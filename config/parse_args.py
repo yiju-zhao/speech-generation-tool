@@ -33,7 +33,7 @@ def parse_args():
     parser.add_argument(
         "--model",
         type=str,
-        default="gpt-4o-mini",
+        default="gpt-5",
         help="Model to use for transcript generation",
     )
     parser.add_argument(
@@ -60,6 +60,10 @@ def parse_args():
         action="store_true",
         help="Disable web searches when using Storm-enhanced approach",
     )
-    parser.add_argument('--slides', nargs='+', type=int,
-                    help='List of slide numbers to process (1-based index)')
+    parser.add_argument(
+        '--slides', 
+        nargs='+', 
+        type=int,
+        default=None,
+        help='List of slide numbers to process (1-based index)')
     return parser.parse_args()

@@ -22,8 +22,6 @@ class TranscriptGenerator:
         if knowledge_base_dir:
             self.knowledge_retriever = KnowledgeRetriever(
                 knowledge_base_dir=knowledge_base_dir,
-                web_search_enabled=tavily_api_key is not None,
-                tavily_api_key=tavily_api_key
             )
             logging.info(f"Initialized knowledge retriever with base directory: {knowledge_base_dir}")
     
@@ -204,7 +202,8 @@ class TranscriptGenerator:
         # Create a prompt focused on verified content with restricted use of knowledge base
         prompt = f"""
         **Role**: Technical Speech Architect  
-        **Objective**: Create a TTS-ready transcript with perfect factual accuracy  
+        **Objective**: Create a TTS-ready transcript with perfect factual accuracy
+        **Length**: WORDLIMIT: Reduce the overlimit script to less than 200 words for highly informed slides, 30 words for title slides, and 50 words for thank you or Q&A slides. The revised transcript must be concise and fit within these limits.
 
         **Current Slide Information**:
         - Position: {slide_position} (first, middle, last)
@@ -297,78 +296,108 @@ class TranscriptReviewer:
             original_content = slide_info['content']
 
         prompt = f"""
-        You are a transcript fact-checker with expertise in detecting hallucinations and ensuring presentation-ready speech.
-        
-        SLIDE INFORMATION:
-        - Position: {slide_position} (first, middle, last)
-        - Type: {slide_type} (title, content, thank_you, q_and_a, etc.)
-        
-        ORIGINAL SLIDE CONTENT:
-        {original_content}
-        
-        VERIFIED FACTS:
-        {facts_text}
-        
-        GENERATED TRANSCRIPT:
-        {transcript}
-        
-        Analyze the transcript for accuracy and presentation quality:
-        
-        1. Is it supported by the verified facts without hallucinations?
-        2. Is it appropriately concise and focused for a presentation?
-        3. Is it appropriate for the slide type? (e.g., brief for thank you slides)
-        4. Does it sound natural when spoken aloud?
-        5. Does it follow the same order and structure as the original slide content?
-        6. Is it engaging and effective for a presentation audience?
-        
-        Format your response as a JSON object with these fields:
-        - "accurate" (boolean): Whether the transcript contains ONLY information from verified facts
-        - "presentation_ready" (boolean): Whether the transcript is appropriately concise and focused
-        - "follows_slide_order" (boolean): Whether the transcript follows the same order as the original slide content
-        - "presentation_quality" (number, 1-10): Rating the overall quality and effectiveness as presentation speech
-        - "hallucinations" (list): Any claims in the transcript not supported by verified facts
-        - "style_issues" (list): Any issues with presentation style (too verbose, too academic, etc.)
-        - "order_issues" (list): Any issues with the transcript not following the original slide content order
-        - "corrections" (list): Suggested corrections for any inaccuracies
-        - "revised_transcript" (string): A revised version that is factually accurate, presentation-ready, and follows the original order
+        You are an expert Communications Coach and Speechwriter. Your task is to transform a dry, fact-based script into a polished, engaging, and natural-sounding speech, while maintaining 100% factual accuracy based on the provided `verified_facts`.
+
+        **CORE DIRECTIVES**
+
+        1.  **WORDLIMIT:** Strictly enforce word limits: under 200 for content slides, 30 for titles, 50 for thank you/Q&A. Be concise.
+        2.  **100% Factually Grounded:** The final transcript MUST ONLY contain information explicitly supported by the `verified_facts`. Eliminate all hallucinations.
+        3.  **Preserve Logical Structure:** The revised transcript's topic flow must exactly match the sequence in the `original_slide_content`.
+        4.  **Natural & Engaging Tone:** The final script must sound like a confident, knowledgeable human speaking to an audience. This is critical.
+
+        ---
+        **ORAL POLISH STYLE GUIDE (Apply this during revision)**
+
+        This is how you will transform the text from written to spoken language.
+
+        * **Use Contractions:** Change "it is" to "it's," "we will" to "we'll," "do not" to "don't." Make it sound like a person talking.
+        * **Add Conversational Transitions:** Inject phrases to guide the listener, like "So, let's dive in," "Now, what does this actually mean for us?", "The key takeaway here is...", or "Let's turn our attention to..."
+        * **Address the Audience:** Use "you," "we," and "our" to create a direct connection with the audience.
+        * **Simplify Complex Sentences:** Break down long, complex sentences into shorter, more digestible ones. Rephrase passive voice into active voice (e.g., change "An increase was seen" to "We saw an increase").
+        * **Ask Rhetorical Questions:** Engage the audience by asking questions you intend to answer, like "So, what's the bottom line?" or "How did we get here?"
+
+        **EXAMPLE OF TRANSFORMATION:**
+        * **Dry/Written Text:** "The implementation of the new protocol resulted in a 30% reduction in system latency."
+        * **Polished/Oral Transcript:** "So, after we rolled out the new protocol, what was the impact? We saw system latency drop by a massive 30%. That's a huge improvement for our users."
+
+        ---
+        **INPUT VARIABLES**
+
+        * `slide_position`: {slide_position}
+        * `slide_type`: {slide_type}
+        * `original_slide_content`: {original_content}
+        * `verified_facts`: {facts_text}
+        * `generated_transcript`: {transcript}
+
+        ---
+        **TASK: 3-STEP PROCESS**
+
+        **Step 1: Critical Analysis**
+        Evaluate the `generated_transcript`.
+        * **Factual Verification:** Does it align perfectly with `verified_facts`?
+        * **Structural Alignment:** Does it follow the order of `original_slide_content`?
+        * **Delivery Quality:** Is it concise and within the WORDLIMIT?
+
+        **Step 2: Construct JSON Output**
+        Fill out the JSON schema below with your detailed analysis.
+
+        **Step 3: Revise and Polish**
+        Create the `revised_transcript`. This is the most important step. **Apply the Oral Polish Style Guide** to transform the text into a presentation-ready script. It must be factually perfect and sound completely natural.
+
+        ---
+        **OUTPUT SCHEMA (JSON Only)**
+        Your entire output must be a single, valid JSON object.
+
+        {{
+        "assessment": {{
+            "is_factually_accurate": <boolean>,
+            "follows_slide_order": <boolean>,
+            "is_presentation_ready": <boolean>
+        }},
+        "presentation_quality_score": <number, 1-10>,
+        "detailed_critique": {{
+            "factual_errors": [
+            {{
+                "unsupported_claim": "<The specific claim from the transcript that is not supported by the facts>",
+                "reasoning": "<A clear explanation of why the claim is a factual error or hallucination>"
+            }}
+            ],
+            "style_and_tone_issues": [
+            {{
+                "issue_description": "<Description of the style problem (e.g., 'Overly verbose and exceeds time limit', 'Unnatural phrasing', 'Tone is too academic')>",
+                "offending_text_example": "<The specific text from the transcript that demonstrates this issue>"
+            }}
+            ],
+            "structural_errors": [
+            {{
+                "issue": "The transcript's structure does not follow the original slide's content order.",
+                "details": "<Explanation of how the order is incorrect (e.g., 'It introduces the third point before the second point')>"
+            }}
+            ]
+        }},
+        "revised_transcript": "<The final, polished, 100% accurate, and presentation-ready transcript as a single string.>"
+        }}
         """
 
+        # (The rest of your code for this method remains the same)
         result = self.llm_client.generate(prompt, self.model)
         try:
-            # Try to parse as JSON
             review = json.loads(result)
-        except:
-            # If not valid JSON, return a simplified format
+        except json.JSONDecodeError:
             review = {
-                "accurate": False,
-                "presentation_ready": False,
-                "follows_slide_order": False,
-                "presentation_quality": 5,
-                "hallucinations": [],
-                "style_issues": [],
-                "order_issues": [],
-                "corrections": [],
+                "assessment": {
+                    "is_factually_accurate": False,
+                    "follows_slide_order": False,
+                    "is_presentation_ready": False,
+                },
+                "presentation_quality_score": 3,
+                "detailed_critique": {
+                    "factual_errors": [],
+                    "style_and_tone_issues": [{"issue_description": "Failed to parse LLM response as JSON.", "offending_text_example": result[:200]}],
+                    "structural_errors": []
+                },
                 "revised_transcript": transcript,
             }
-
-            lines = result.split("\n")
-            is_revised = False
-            revised_transcript = []
-
-            for line in lines:
-                if "hallucination:" in line.lower() or "issue:" in line.lower():
-                    review["hallucinations"].append(line)
-                elif "style issue:" in line.lower():
-                    review["style_issues"].append(line)
-                elif "order issue:" in line.lower():
-                    review["order_issues"].append(line)
-                elif "correction:" in line.lower():
-                    review["corrections"].append(line)
-                elif line.startswith("Revised transcript:") or is_revised:
-                    is_revised = True
-                    revised_transcript.append(line)
-
-            if revised_transcript:
-                review["revised_transcript"] = "\n".join(revised_transcript)
-
-        return review 
+            logging.error(f"Failed to parse review transcript JSON response: {result}")
+        
+        return review

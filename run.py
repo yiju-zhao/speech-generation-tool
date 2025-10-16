@@ -26,6 +26,7 @@ def main():
     llm_provider = args.llm_provider
     use_storm = args.use_storm
     disable_search = args.disable_search
+    slides=args.slides
 
     # Get project paths
     paths = get_project_paths()
@@ -69,7 +70,7 @@ def main():
         print(f"Using {tts_provider} for TTS generation")
 
         # Save audio files to the same directory as the noted PPTX
-        process_pptx_for_audio(noted_pptx, None, provider=tts_provider)
+        process_pptx_for_audio(noted_pptx, None, provider=tts_provider, page_range=slides)
         print("Pipeline completed successfully!")
         return
 
@@ -90,7 +91,7 @@ def main():
             model=model,
             enable_search=not disable_search,
             llm_provider=llm_provider,
-            slides=args.slides,
+            slides=slides,
         )
     else:
         print(f"Generating transcripts with standard approach for {pptx_path.name}...")
@@ -101,7 +102,7 @@ def main():
             target_language=language,
             model=model,
             llm_provider=llm_provider,
-            slides=args.slides,
+            slides=slides,
         )
 
     # Generate audio if not skipped

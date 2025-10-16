@@ -1,15 +1,16 @@
 """
 Voice generation module for Digital Presenter.
 """
-
+import os
 import time
 import requests
 import openai
 from pathlib import Path
 from elevenlabs.client import ElevenLabs
 from elevenlabs import play
-elevenlabs_available = True
+from dotenv import load_dotenv
 
+load_dotenv()
 
 from .utils import (
     load_config,
@@ -49,84 +50,137 @@ def generate_audio_with_openai(transcript, slide_number, output_dir, api_key=Non
         return None
 
 
-def generate_audio_with_minimax(transcript, slide_number, output_dir, api_key=None):
-    """Generate audio for a transcript using Minimax TTS API."""
+def generate_audio_with_minimax(transcript: str, slide_number: int, output_dir, api_key: str = None, voice_id: str = "moss_audio_413921f7-327e-11f0-9505-4e9b7ef777f4", group_id: str = "1943724805874258267"):
+    """
+    Generate audio for a transcript using Minimax TTS API.
+
+    Args:
+        transcript (str): The text to convert to speech.
+        slide_number (int): A number for naming the output file (e.g., slide number).
+        output_dir (str or Path): The directory to save the generated audio file.
+        group_id (str): Your Minimax Group ID.
+        api_key (str, optional): Your Minimax API key. If None, attempts to load from
+                                 the environment variable MINIMAX_API_KEY.
+        voice_id (str, optional): The voice ID to use for generation.
+                                  Defaults to "moss_audio_413921f7-327e-11f0-9505-4e9b7ef777f4".
+
+    Returns:
+        Path or None: The Path object to the generated audio file if successful, else None.
+    """
+    # Ensure output_dir is a Path object
+    output_dir_path = Path(output_dir)
+    output_dir_path.mkdir(parents=True, exist_ok=True) # Create directory if it doesn't exist
+
+    # Retrieve API key if not provided
     if not api_key:
-        config = load_config()
-        api_key = config["minimax_api_key"]
+        api_key = os.getenv("MINIMAX_API_KEY")
+        if not api_key:
+            print("Error: MINIMAX_API_KEY not provided and not found in environment variables.")
+            return None
+    
+    if not group_id:
+        print("Error: Minimax Group ID (group_id) must be provided.")
+        return None
 
-    # Minimax TTS API configuration
-    api_url = "https://api.minimax.chat/v1/t2a_v2"
+    # Minimax TTS API configuration - using "minimaxi.chat" and "GroupId" from the first example
+    api_url = f"https://api.minimaxi.chat/v1/t2a_v2?GroupId={group_id}"
 
-    # According to Minimax documentation, the Authorization header should be "Bearer {api_key}"
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
 
-    # Prepare the request payload exactly as specified in the documentation
+    # Prepare the request payload
+    # Merging details from both examples, ensuring "output_format": "hex" and "channel" are included
     payload = {
         "model": "speech-02-hd",
         "text": transcript,
-        "stream": False,
-        "language_boost": "auto",
-        "output_format": "hex",
+        "stream": False, # As per both examples
+        "output_format": "hex", # Crucial for bytes.fromhex(), explicitly in 2nd fn, implied by 1st
         "voice_setting": {
-            "voice_id": "male-qn-qingse",
-            "speed": 1,
+            "voice_id": "Chinese (Mandarin)_Reliable_Executive", # Using the more specific voice_id, can be parameterized
+            "speed": 1.1, # Ensuring float for speed, vol, pitch if API expects it
             "vol": 1,
             "pitch": 0,
-            "emotion": "happy",
+            "emotion": "neutral" # From the more detailed payload in the original function
         },
-        "audio_setting": {"sample_rate": 32000, "bitrate": 128000, "format": "mp3"},
+        "audio_setting": {
+            "sample_rate": 32000,
+            "bitrate": 128000,
+            "format": "mp3",
+            "channel": 1 # From the first example's audio_setting
+        },
+        "subtitleEnable": True, # The parameter controls whether the subtitle service is enabled
+        # "language_boost": "auto", # This was in the original function's payload.
+                                  # Can be added if supported and needed. For now, keeping it closer to the first example's structure.
+                                  # If you need it, uncomment the line above and ensure it's placed correctly in the payload.
     }
 
-    # Make the API request
+    print(f"Generating audio for slide {slide_number} using Minimax with voice {voice_id}...")
+    print(f"API URL: {api_url}")
+    # print(f"Payload: {json.dumps(payload, indent=2)}") # For debugging payload
+
     try:
-        print(f"Generating audio for slide {slide_number} using Minimax...")
+        # Make the API request
+        # Using requests.post with json=payload is generally preferred
         response = requests.post(api_url, headers=headers, json=payload)
-        response.raise_for_status()  # Raise an exception for HTTP errors
+        response.raise_for_status()  # Raise an exception for HTTP errors (4xx or 5xx)
 
         # Parse the response
         response_data = response.json()
 
-        # Check if the request was successful
+        # Check if the request was successful based on Minimax's response structure
         if response_data.get("base_resp", {}).get("status_code") == 0:
-            # Get the audio data from the response
-            audio_data = response_data.get("data", {}).get("audio")
+            # Get the audio data (hex string)
+            audio_hex = response_data.get("data", {}).get("audio")
 
-            if audio_data:
-                # Get additional information
+            if audio_hex:
+                # Get additional information if available
                 extra_info = response_data.get("extra_info", {})
-                audio_length = extra_info.get("audio_length", 0)
-                audio_size = extra_info.get("audio_size", 0)
+                audio_length_ms = extra_info.get("audio_length", 0) # Assuming it's in ms
+                # audio_size_bytes = extra_info.get("audio_size", 0) # Size of hex string, not binary
                 word_count = extra_info.get("word_count", 0)
 
-                # Convert hex to binary and save to file
-                audio_binary = bytes.fromhex(audio_data)
-                output_file = output_dir / f"slide_{slide_number}.mp3"
+                # Convert hex string to binary audio data
+                audio_binary = bytes.fromhex(audio_hex)
+                
+                output_file = output_dir_path / f"slide_{slide_number}.mp3"
 
                 with open(output_file, "wb") as f:
                     f.write(audio_binary)
 
-                print(
-                    f"Successfully generated audio for slide {slide_number} using Minimax"
-                )
-                print(f"  - Audio length: {audio_length}ms")
-                print(f"  - Audio size: {audio_size} bytes")
-                print(f"  - Word count: {word_count}")
+                # Get actual binary audio size
+                audio_size_bytes_actual = len(audio_binary)
 
+                print(f"Successfully generated audio for slide {slide_number} using Minimax.")
+                print(f"  - Output file: {output_file}")
+                print(f"  - Audio length: {audio_length_ms}ms")
+                print(f"  - Audio size: {audio_size_bytes_actual} bytes")
+                print(f"  - Word count: {word_count}")
                 return output_file
             else:
-                print(f"No audio data received for slide {slide_number} from Minimax")
+                print(f"No audio data (hex string) received for slide {slide_number} from Minimax.")
+                print(f"Full response data: {response_data}")
                 return None
         else:
-            status_msg = response_data.get("base_resp", {}).get(
-                "status_msg", "Unknown error"
-            )
-            print(f"API error for slide {slide_number}: {status_msg}")
+            status_msg = response_data.get("base_resp", {}).get("status_msg", "Unknown API error")
+            error_code = response_data.get("base_resp", {}).get("status_code", "N/A")
+            print(f"Minimax API error for slide {slide_number}: {status_msg} (Code: {error_code})")
+            print(f"Full response data: {response_data}")
             return None
 
+    except requests.exceptions.HTTPError as http_err:
+        print(f"HTTP error occurred while generating audio for slide {slide_number}: {http_err}")
+        print(f"Response content: {response.text}")
+    except requests.exceptions.RequestException as req_err:
+        print(f"Request error occurred while generating audio for slide {slide_number}: {req_err}")
+    except json.JSONDecodeError:
+        print(f"Error decoding JSON response for slide {slide_number}.")
+        print(f"Response content: {response.text if 'response' in locals() else 'No response object'}")
     except Exception as e:
-        print(f"Error generating audio with Minimax for slide {slide_number}: {str(e)}")
-        return None
+        print(f"An unexpected error occurred generating audio with Minimax for slide {slide_number}: {str(e)}")
+    
+    return None
 
 
 def generate_audio_with_elevenlabs(transcript, slide_number, output_dir, api_key=None, voice_id="PZ3PfumfdpqvMhDFh6ea", model_id="eleven_multilingual_v2", output_format="mp3_44100_128"):
@@ -186,7 +240,7 @@ def generate_audio(
         )
 
 
-def process_pptx_for_audio(pptx_path, output_dir=None, provider="minimax"):
+def process_pptx_for_audio(pptx_path, output_dir=None, provider="minimax", page_range=None):
     """
     Extract transcripts from a PowerPoint file and generate audio for each slide.
 
@@ -237,6 +291,11 @@ def process_pptx_for_audio(pptx_path, output_dir=None, provider="minimax"):
         if not transcript:
             print(f"No transcript available for slide {slide_number}, skipping.")
             continue
+
+        if page_range is not None and slide_number not in page_range:
+            print(f"Slide {slide_number} is not in the specified range, skipping.")
+            continue
+        print(f"Generating audio for slide {slide_number}...")
 
         # Generate audio with the specified provider
         generate_audio(transcript, slide_number, output_dir, provider)

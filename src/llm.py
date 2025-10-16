@@ -71,7 +71,7 @@ class LLMProvider(ABC):
 
     @abstractmethod
     def generate(
-        self, prompt: str, model: str, max_tokens: int = 3000, **kwargs
+        self, prompt: str, model: str, max_completion_tokens: int = 5000, **kwargs
     ) -> str:
         """Generate text from the model."""
         raise NotImplementedError
@@ -110,14 +110,14 @@ class OpenAIProvider(LLMProvider):
         giveup=giveup_hdlr,
     )
     def generate(
-        self, prompt: str, model: str, max_tokens: int = 3000, **kwargs
+        self, prompt: str, model: str, max_completion_tokens: int = 5000, **kwargs
     ) -> str:
         """Generate text using OpenAI API."""
         try:
             response = self.client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
+                max_completion_tokens=max_completion_tokens,
                 stream=False,
                 **kwargs,
             )
@@ -167,14 +167,14 @@ class DeepSeekProvider(LLMProvider):
         giveup=giveup_hdlr,
     )
     def generate(
-        self, prompt: str, model: str, max_tokens: int = 3000, **kwargs
+        self, prompt: str, model: str, max_completion_tokens: int = 5000, **kwargs
     ) -> str:
         """Generate text using DeepSeek API."""
         try:
             response = self.client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
+                max_completion_tokens=max_completion_tokens,
                 stream=False,
                 **kwargs,
             )
@@ -223,14 +223,14 @@ class GeminiProvider(LLMProvider):
         giveup=giveup_hdlr,
     )
     def generate(
-        self, prompt: str, model: str, max_tokens: int = 3000, **kwargs
+        self, prompt: str, model: str, max_completion_tokens: int = 5000, **kwargs
     ) -> str:
         """Generate text using Gemini API."""
         try:
             response = self.client.models.generate_content(
                 model=model,
                 contents=prompt,
-                generation_config={"max_output_tokens": max_tokens, **kwargs},
+                generation_config={"max_output_tokens": max_completion_tokens, **kwargs},
             )
 
             # Gemini API doesn't provide token usage directly
@@ -279,14 +279,14 @@ class AzureOpenAIProvider(LLMProvider):
         giveup=giveup_hdlr,
     )
     def generate(
-        self, prompt: str, model: str, max_tokens: int = 3000, **kwargs
+        self, prompt: str, model: str, max_completion_tokens: int = 5000, **kwargs
     ) -> str:
         """Generate text using Azure OpenAI API."""
         try:
             response = self.client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
+                max_completion_tokens=max_completion_tokens,
                 stream=False,
                 **kwargs,
             )

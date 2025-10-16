@@ -15,4 +15,5 @@ class SlideInformation:
     unpolished_notes: str = ""
     slide_number: int = 0
     knowledge_items: List[KnowledgeItem] = field(default_factory=list)
-    search_results: List[Dict] = field(default_factory=list) 
+    search_results: List[Dict] = field(default_factory=list)
+

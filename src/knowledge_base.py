@@ -8,8 +8,12 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
+try:
+    from sentence_transformers import SentenceTransformer  # type: ignore
+    from sklearn.metrics.pairwise import cosine_similarity  # type: ignore
+except Exception:  # pragma: no cover
+    SentenceTransformer = None  # type: ignore
+    cosine_similarity = None  # type: ignore
 
 from src.web_search import TavilySearchRetriever
 
@@ -102,12 +106,16 @@ class KnowledgeBase:
         """Initialize the sentence encoder for semantic search."""
 
         if self.encoder is None:
+            if SentenceTransformer is None:
+                logging.warning("sentence-transformers not available; semantic search disabled. Falling back to keyword search.")
+                self.encoder = None
+                return
             try:
                 self.encoder = SentenceTransformer("paraphrase-MiniLM-L6-v2")
                 logging.info("Sentence encoder initialized successfully.")
             except Exception as e:
-                logging.error(f"Error initializing sentence encoder: {e}")
-                raise
+                logging.warning(f"Error initializing sentence encoder; falling back to keyword search: {e}")
+                self.encoder = None
 
     def compute_embeddings(self):
         """Compute embeddings for all knowledge items."""
@@ -116,13 +124,20 @@ class KnowledgeBase:
             return
 
         self.init_encoder()
+        if not self.encoder:
+            # No encoder — skip embedding computation
+            self.embeddings = None
+            return
 
         contents = [item.content for item in self.items]
         self.embeddings = self.encoder.encode(contents)
 
         # Store embeddings in each item
         for i, item in enumerate(self.items):
-            item.embeddings = self.embeddings[i].tolist()
+            try:
+                item.embeddings = self.embeddings[i].tolist()
+            except Exception:
+                item.embeddings = None
 
     def search(self, query, top_k=5):
         """Search the knowledge base with a natural language query."""
@@ -134,7 +149,11 @@ class KnowledgeBase:
         if self.embeddings is None:
             self.compute_embeddings()
 
-        self.init_encoder()
+        # If encoder or embeddings are unavailable, fall back to keyword search
+        if not self.encoder or self.embeddings is None or cosine_similarity is None:
+            logging.info("Falling back to keyword search for knowledge base query.")
+            return self.keyword_search(query, top_k=top_k)
+
         query_embedding = self.encoder.encode(query)
 
         similarities = cosine_similarity([query_embedding], self.embeddings)[0]

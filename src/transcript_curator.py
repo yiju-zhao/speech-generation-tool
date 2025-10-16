@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 from .knowledge_base import KnowledgeRetriever
-from .transcript_models import SlideInformation
+from .models import SlideInformation
 
 
 class TranscriptKnowledgeCurator:
@@ -399,10 +399,10 @@ class TranscriptKnowledgeCurator:
         prompt = f"""
         You are synthesizing verified information for slide {slide_info.slide_number}.
         
-        ORIGINAL SLIDE CONTENT:
+        ORIGINAL SLIDE CONTENT (use this to preserve structure and emphasis):
         {slide_info.original_content}
         
-        VERIFIED FACTS:
+        VERIFIED FACTS (must all be included):
         {facts_text}
         
         {knowledge_context}
@@ -412,15 +412,15 @@ class TranscriptKnowledgeCurator:
         
         {"IMPORTANT: The Tavily AI Answer provides verified information that should be prioritized in your synthesis." if ai_answer else ""}
         
-        Create a coherent synthesis of this information that:
-        1. Exclusively uses the verified facts
-        2. Maintains technical precision
-        3. Organizes information logically
-        4. Includes ALL verified facts, leaving nothing out
-        5. Does NOT add any information not in the verified facts
+        Create a coherent synthesis that:
+        1. Includes EVERY verified fact (do not omit any verified content)
+        2. Uses the ORIGINAL SLIDE CONTENT to guide structure and ordering
+        3. Maintains technical precision; paraphrase allowed but do not change meaning
+        4. Adds NO new facts beyond the verified facts
+        5. Resolves conflicts in favor of verified facts if wording differs
         6. Uses natural, flowing language suitable for a presentation transcript
         
-        Your output will be used as the foundation for generating an accurate transcript.
+        Output a single concise paragraph that will serve as the factual foundation for the final transcript.
         """
 
         verified_content = self.llm_client.generate(prompt, self.model)

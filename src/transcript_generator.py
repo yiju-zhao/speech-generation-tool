@@ -157,15 +157,21 @@ class TranscriptGenerator:
         slide_position = "middle"
         slide_type = "content"
         slide_number = 0
+        original_slide_text = ""
+        verified_facts: List[str] = []
         if slide_info:
             if isinstance(slide_info, dict):
                 slide_position = slide_info.get("position", slide_position)
                 slide_type = slide_info.get("type", slide_type)
                 slide_number = slide_info.get("slide_number", slide_number)
+                original_slide_text = slide_info.get("original_content", original_slide_text)
+                verified_facts = slide_info.get("facts", []) or []
             else:
                 slide_position = getattr(slide_info, "position", slide_position)
                 slide_type = getattr(slide_info, "type", slide_type)
                 slide_number = getattr(slide_info, "slide_number", slide_number)
+                original_slide_text = getattr(slide_info, "original_content", original_slide_text)
+                verified_facts = getattr(slide_info, "facts", []) or []
 
         context = "\n".join(previous_transcripts) if previous_transcripts else ""
 
@@ -173,7 +179,9 @@ class TranscriptGenerator:
         technical_knowledge = ""
         rag_items = []
         if self.knowledge_retriever:
-            rag_items = self.retrieve_technical_knowledge(verified_content, slide_number)
+            # Prefer using the original slide text to derive technical context
+            basis = original_slide_text or verified_content
+            rag_items = self.retrieve_technical_knowledge(basis, slide_number)
         if rag_items:
             snippets = []
             for item in rag_items[: self.max_rag_items]:
@@ -184,6 +192,9 @@ class TranscriptGenerator:
             technical_knowledge = " | ".join(snippets)
 
         # --- Build the strict prompt ---
+        # Prepare a compact representation of verified facts to prevent omissions
+        facts_block = "\n".join(f"- {f}" for f in verified_facts) if verified_facts else "(no discrete facts provided)"
+
         prompt = f"""
 SYSTEM: You are a professional presenter and transcript writer.
 Your goal is to create a natural, human-sounding spoken transcript based strictly on the VERIFIED SLIDE CONTENT.
@@ -198,6 +209,9 @@ SECONDARY CONTEXT (for clarification only, not for adding facts):
 
 PREVIOUS SLIDES (for continuity only):
 {context if context else "None"}
+
+ORIGINAL SLIDE STRUCTURE (use this to preserve order and emphasis; do not add facts):
+{original_slide_text if original_slide_text else "None"}
 
 SLIDE DETAILS:
 - Position: {slide_position}
@@ -216,9 +230,13 @@ SPEAKING STYLE GUIDELINES:
    - thank-you/Q&A <= 50 words
 7. Avoid robotic or academic phrasing — this is meant for spoken delivery.
 8. Do not use bullet lists or headings; output one continuous spoken paragraph only.
+9. MUST include every verified fact; do not remove any verified content.
 
 VERIFIED SLIDE CONTENT:
 {verified_content}
+
+VERIFIED FACTS (must all be preserved, paraphrasing allowed but no omissions):
+{facts_block}
 
 Now, write the final transcript as if it were being spoken by a confident, engaging presenter.
 
@@ -243,7 +261,41 @@ BEGIN TRANSCRIPT:
 """
                 raw_out = self.llm_client.generate(repair_prompt, self.model)
 
-        return raw_out.strip()
+        final_out = raw_out.strip()
+
+        # Coverage pass: ensure all verified facts are present (simple containment heuristic)
+        if verified_facts:
+            missing = []
+            lowered = final_out.lower()
+            for fact in verified_facts:
+                # Use a light heuristic: check presence of key tokens from the fact
+                tokens = [t for t in fact.lower().replace("\n", " ").split() if len(t) > 3]
+                if tokens and not all(t in lowered for t in tokens[: max(1, min(3, len(tokens))) ]):
+                    missing.append(fact)
+
+            if missing:
+                logger.info(f"Coverage repair: {len(missing)} verified facts missing; requesting inclusion.")
+                repair_prompt = f"""
+You must produce a single-paragraph spoken transcript that preserves ALL verified facts below.
+Do not add new information. Keep it natural, ordered like the original slide, and under the word limits.
+
+ORIGINAL SLIDE STRUCTURE:
+{original_slide_text if original_slide_text else "None"}
+
+ALREADY GENERATED DRAFT (improve by inserting the missing facts smoothly):
+{final_out}
+
+VERIFIED SLIDE CONTENT (ground truth):
+{verified_content}
+
+MISSING VERIFIED FACTS (must be incorporated):
+{"\n".join(f"- {m}" for m in missing)}
+
+BEGIN REVISED TRANSCRIPT:
+"""
+                final_out = self.llm_client.generate(repair_prompt, self.model).strip()
+
+        return final_out
 
 
 class TranscriptReviewer:
@@ -319,6 +371,7 @@ TASK:
 5) Produce a revised_transcript that:
    - Is presentation-ready and natural sounding for speech.
    - Is 100% grounded in the VERIFIED SLIDE CONTENT (no added facts).
+   - Includes ALL verified facts (do not omit any verified content).
    - Keeps the same sequence as the slide.
    - Obeys the word limits (title/thank-you/content).
 

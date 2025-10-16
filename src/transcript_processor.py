@@ -16,7 +16,7 @@ from .utils import (
     extract_slide_content,
 )
 from .llm import get_llm_provider
-from .transcript_models import SlideInformation
+from .models import SlideInformation
 from .transcript_curator import TranscriptKnowledgeCurator
 from .transcript_generator import TranscriptGenerator, TranscriptReviewer
 
@@ -80,7 +80,14 @@ def process_presentation_with_storm(
         llm_client, model, enable_search=enable_search,
         knowledge_base_dir=knowledge_base_dir, tavily_api_key=tavily_api_key
     )
-    transcript_generator = TranscriptGenerator(llm_client, model, target_language)
+    # Pass knowledge retriever and KB dir into generator for lean RAG context
+    transcript_generator = TranscriptGenerator(
+        llm_client,
+        model,
+        target_language,
+        knowledge_base_dir=knowledge_base_dir,
+        knowledge_retriever=getattr(knowledge_curator, "knowledge_retriever", None),
+    )
     transcript_reviewer = TranscriptReviewer(llm_client, model)
 
     # ------------------- Tracking setup -------------------
@@ -169,8 +176,12 @@ def process_presentation_with_storm(
 
         # --------------- Step 2: Transcript Generation ---------------
         try:
+            # Use explicit keywords to avoid parameter ordering bugs
             transcript = transcript_generator.generate_transcript(
-                slide_info.verified_content, previous_transcripts
+                slide_info.verified_content,
+                slide_info=slide_info,
+                previous_transcripts=previous_transcripts,
+                enforce_semantic_check=False,
             )
         except Exception as e:
             logging.error(f"Transcript generation failed: {e}")

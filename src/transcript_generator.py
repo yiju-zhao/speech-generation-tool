@@ -197,6 +197,23 @@ class TranscriptGenerator:
         # Prepare a compact representation of verified facts to prevent omissions
         facts_block = "\n".join(f"- {f}" for f in verified_facts) if verified_facts else "(no discrete facts provided)"
 
+        # Positional guidance for introduction/conclusion handling
+        positional_guidance = ""
+        if slide_position == "first":
+            positional_guidance = (
+                "OPENING: Begin with a brief, friendly welcome and a one-sentence setup of what this talk is about. "
+                "Do not invent facts beyond the slide. Keep it under 30–40 words for the opening tone before covering the slide content."
+            )
+        elif slide_position == "last":
+            positional_guidance = (
+                "CLOSING: End with a concise wrap-up that ties the slide back to the overall talk, and include a brief thank-you. "
+                "Do not add new facts. Keep closing under 40 words."
+            )
+        else:
+            positional_guidance = (
+                "MIDDLE: Do NOT include introductions or conclusions. Continue seamlessly from prior slides and focus only on this slide's points."
+            )
+
         prompt = f"""
 SYSTEM: You are a professional presenter and transcript writer.
 Your goal is to create a natural, human-sounding spoken transcript based strictly on the ORIGINAL SLIDE CONTENT.
@@ -216,6 +233,9 @@ SLIDE DETAILS:
 - Position: {slide_position}
 - Type: {slide_type}
 - Language: {self.target_language.upper() if self.target_language else "ENGLISH"}
+
+POSITIONAL GUIDANCE:
+{positional_guidance}
 
 SPEAKING STYLE GUIDELINES:
 1. Sound natural and conversational — as if explaining the slide out loud.

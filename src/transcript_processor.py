@@ -14,6 +14,7 @@ from .utils import (
     get_project_paths,
     write_transcripts_to_pptx,
     extract_slide_content,
+    extract_transcripts_from_pptx,
 )
 from .llm import get_llm_provider
 from .models import SlideInformation
@@ -101,7 +102,14 @@ def process_presentation_with_storm(
 
     # ------------------- Tracking setup -------------------
     transcripts = []
-    previous_transcripts = []
+    # Map of slide_number -> transcript generated in this run
+    generated_transcripts = {}
+    # Preload any existing transcripts from notes to support single-slide regen continuity
+    try:
+        existing = extract_transcripts_from_pptx(pptx_path)
+        notes_transcripts = {item["slide_number"]: (item.get("transcript") or "").strip() for item in existing}
+    except Exception:
+        notes_transcripts = {}
     slide_information = {}
     all_knowledge_items = []
 
@@ -131,10 +139,23 @@ def process_presentation_with_storm(
             continue
 
         combined_content = f"{slide_content or ''}\n\nUNPOLISHED NOTES:\n{unpolished_notes}" if unpolished_notes else slide_content or ""
+        # Determine slide position and type for style guidance
+        if idx == 1:
+            position = "first"
+            slide_type = "title"
+        elif idx == slide_count:
+            position = "last"
+            slide_type = "thank_you"
+        else:
+            position = "middle"
+            slide_type = "content"
+
         slide_info = SlideInformation(
             original_content=slide_content or "",
             unpolished_notes=unpolished_notes,
             slide_number=idx,
+            position=position,
+            type=slide_type,
         )
 
         # --------------- Step 1: Knowledge Curation ---------------
@@ -183,10 +204,19 @@ def process_presentation_with_storm(
 
         # --------------- Step 2: Transcript Generation ---------------
         try:
-            # Feed only original slide content to avoid duplication; facts remain in slide_info
+            # Build continuity context from earlier slides: prefer this run's outputs, else notes
+            context_transcripts = []
+            for j in range(1, idx):
+                if j in generated_transcripts:
+                    context_transcripts.append(generated_transcripts[j])
+                else:
+                    prev = notes_transcripts.get(j)
+                    if prev:
+                        context_transcripts.append(prev)
+
             transcript = transcript_generator.generate_transcript(
                 slide_info,
-                previous_transcripts=previous_transcripts,
+                previous_transcripts=context_transcripts,
                 enforce_semantic_check=False,
             )
         except Exception as e:
@@ -223,7 +253,7 @@ def process_presentation_with_storm(
             ]
 
         transcripts.append(slide_data)
-        previous_transcripts.append(final_transcript)
+        generated_transcripts[idx] = final_transcript
 
         logging.info(f"Slide {idx} processed successfully")
 

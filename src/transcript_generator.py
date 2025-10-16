@@ -110,7 +110,9 @@ class TranscriptGenerator:
         if not technical_terms:
             return []
 
-        queries = [f"explain {t}" for t in technical_terms]
+        # To avoid triggering web search in the generator path, rely on KB-only retrieval
+        # by passing an empty query list (web search branch requires non-empty queries).
+        queries: List[str] = []
         try:
             items = self.knowledge_retriever.retrieve_for_slide(
                 slide_content=slide_content,

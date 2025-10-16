@@ -141,13 +141,12 @@ class TranscriptGenerator:
     # ---------- Transcript generation ----------
     def generate_transcript(
         self,
-        verified_content: str,
-        slide_info: Optional[Dict] = None,
+        slide_info: Any,
         previous_transcripts: Optional[List[str]] = None,
         enforce_semantic_check: bool = False,
     ) -> str:
         """
-        Generate a TTS-ready transcript anchored to verified_content.
+        Generate a TTS-ready transcript anchored to the original slide content.
 
         enforce_semantic_check: if True and sentence-transformers is available, we will check
         that the generated transcript is semantically close to the slide before returning.
@@ -159,19 +158,22 @@ class TranscriptGenerator:
         slide_number = 0
         original_slide_text = ""
         verified_facts: List[str] = []
-        if slide_info:
-            if isinstance(slide_info, dict):
-                slide_position = slide_info.get("position", slide_position)
-                slide_type = slide_info.get("type", slide_type)
-                slide_number = slide_info.get("slide_number", slide_number)
-                original_slide_text = slide_info.get("original_content", original_slide_text)
-                verified_facts = slide_info.get("facts", []) or []
-            else:
-                slide_position = getattr(slide_info, "position", slide_position)
-                slide_type = getattr(slide_info, "type", slide_type)
-                slide_number = getattr(slide_info, "slide_number", slide_number)
-                original_slide_text = getattr(slide_info, "original_content", original_slide_text)
-                verified_facts = getattr(slide_info, "facts", []) or []
+        # slide_info is required; support both dict and dataclass
+        if isinstance(slide_info, dict):
+            slide_position = slide_info.get("position", slide_position)
+            slide_type = slide_info.get("type", slide_type)
+            slide_number = slide_info.get("slide_number", slide_number)
+            original_slide_text = slide_info.get("original_content", original_slide_text)
+            verified_facts = slide_info.get("facts", []) or []
+        else:
+            slide_position = getattr(slide_info, "position", slide_position)
+            slide_type = getattr(slide_info, "type", slide_type)
+            slide_number = getattr(slide_info, "slide_number", slide_number)
+            original_slide_text = getattr(slide_info, "original_content", original_slide_text)
+            verified_facts = getattr(slide_info, "facts", []) or []
+
+        # Primary text for prompting and checks
+        slide_text = original_slide_text or ""
 
         context = "\n".join(previous_transcripts) if previous_transcripts else ""
 
@@ -179,8 +181,8 @@ class TranscriptGenerator:
         technical_knowledge = ""
         rag_items = []
         if self.knowledge_retriever:
-            # Prefer using the original slide text to derive technical context
-            basis = original_slide_text or verified_content
+            # Use the original slide content to derive technical context
+            basis = slide_text
             rag_items = self.retrieve_technical_knowledge(basis, slide_number)
         if rag_items:
             snippets = []
@@ -197,11 +199,11 @@ class TranscriptGenerator:
 
         prompt = f"""
 SYSTEM: You are a professional presenter and transcript writer.
-Your goal is to create a natural, human-sounding spoken transcript based strictly on the VERIFIED SLIDE CONTENT.
+Your goal is to create a natural, human-sounding spoken transcript based strictly on the ORIGINAL SLIDE CONTENT.
 The transcript should sound smooth, conversational, and confident—like a real speaker presenting the slide—not like a reading of text.
 
 PRIMARY SOURCE:
-Use ONLY the VERIFIED SLIDE CONTENT below as your factual foundation.
+Use ONLY the ORIGINAL SLIDE CONTENT below as your factual foundation.
 You may lightly rephrase for flow and clarity, but never add or invent new information.
 
 SECONDARY CONTEXT (for clarification only, not for adding facts):
@@ -209,9 +211,6 @@ SECONDARY CONTEXT (for clarification only, not for adding facts):
 
 PREVIOUS SLIDES (for continuity only):
 {context if context else "None"}
-
-ORIGINAL SLIDE STRUCTURE (use this to preserve order and emphasis; do not add facts):
-{original_slide_text if original_slide_text else "None"}
 
 SLIDE DETAILS:
 - Position: {slide_position}
@@ -232,8 +231,8 @@ SPEAKING STYLE GUIDELINES:
 8. Do not use bullet lists or headings; output one continuous spoken paragraph only.
 9. MUST include every verified fact; do not remove any verified content.
 
-VERIFIED SLIDE CONTENT:
-{verified_content}
+ORIGINAL SLIDE CONTENT:
+{slide_text}
 
 VERIFIED FACTS (must all be preserved, paraphrasing allowed but no omissions):
 {facts_block}
@@ -248,15 +247,15 @@ BEGIN TRANSCRIPT:
 
         # Optional semantic check
         if enforce_semantic_check and _SEM_MODEL:
-            sim = self.semantic_similarity(verified_content, raw_out)
+            sim = self.semantic_similarity(slide_text, raw_out)
             if sim is not None and sim < 0.55:
                 logger.warning(f"Low semantic similarity ({sim:.2f}) between slide and transcript.")
                 # Slight repair prompt: ask LLM to strictly reduce to slide content only
                 repair_prompt = f"""
 You produced a transcript that is semantically distant from the slide content (similarity={sim:.2f}).
-Please re-generate a transcript that STRICTLY uses only the VERIFIED SLIDE CONTENT below, follows the same order, and obeys previous rules.
-VERIFIED SLIDE CONTENT:
-{verified_content}
+Please re-generate a transcript that STRICTLY uses only the ORIGINAL SLIDE CONTENT below, follows the same order, and obeys previous rules.
+ORIGINAL SLIDE CONTENT:
+{slide_text}
 BEGIN TRANSCRIPT:
 """
                 raw_out = self.llm_client.generate(repair_prompt, self.model)
@@ -279,14 +278,11 @@ BEGIN TRANSCRIPT:
 You must produce a single-paragraph spoken transcript that preserves ALL verified facts below.
 Do not add new information. Keep it natural, ordered like the original slide, and under the word limits.
 
-ORIGINAL SLIDE STRUCTURE:
-{original_slide_text if original_slide_text else "None"}
-
 ALREADY GENERATED DRAFT (improve by inserting the missing facts smoothly):
 {final_out}
 
-VERIFIED SLIDE CONTENT (ground truth):
-{verified_content}
+ORIGINAL SLIDE CONTENT (ground truth):
+{slide_text}
 
 MISSING VERIFIED FACTS (must be incorporated):
 {"\n".join(f"- {m}" for m in missing)}

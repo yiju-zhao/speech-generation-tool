@@ -176,10 +176,9 @@ def process_presentation_with_storm(
 
         # --------------- Step 2: Transcript Generation ---------------
         try:
-            # Use explicit keywords to avoid parameter ordering bugs
+            # Feed only original slide content to avoid duplication; facts remain in slide_info
             transcript = transcript_generator.generate_transcript(
-                slide_info.verified_content,
-                slide_info=slide_info,
+                slide_info,
                 previous_transcripts=previous_transcripts,
                 enforce_semantic_check=False,
             )

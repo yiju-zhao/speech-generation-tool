@@ -5,6 +5,7 @@ Main processor for handling presentations with the Storm approach
 import os
 import json
 import logging
+import re
 from pathlib import Path
 from pptx import Presentation
 
@@ -171,6 +172,61 @@ def process_presentation_with_storm(
                         logging.info(f"Using cached knowledge for slide {idx} ({len(cached_items)} items)")
                         from .knowledge_base import KnowledgeItem
                         slide_info.knowledge_items = [KnowledgeItem.from_dict(d) for d in cached_items]
+
+                        # Attempt to extract QA pairs directly from KB without LLM
+                        facts = []
+                        for it in slide_info.knowledge_items:
+                            md = getattr(it, "metadata", {}) or {}
+                            # Structured QA in metadata
+                            qa = md.get("qa")
+                            if isinstance(qa, dict):
+                                q = qa.get("question") or qa.get("q") or ""
+                                a = qa.get("answer") or qa.get("a") or ""
+                                if isinstance(a, str) and a.strip():
+                                    if isinstance(q, str) and q.strip():
+                                        facts.append(f"Q: {q.strip()} A: {a.strip()}")
+                                    else:
+                                        facts.append(a.strip())
+                                    continue
+                            if isinstance(md.get("answer"), str):
+                                a = md.get("answer")
+                                q = md.get("question") or md.get("q")
+                                if a and a.strip():
+                                    if isinstance(q, str) and q.strip():
+                                        facts.append(f"Q: {q.strip()} A: {a.strip()}")
+                                    else:
+                                        facts.append(a.strip())
+                                    continue
+
+                            # Parse inline Q/A patterns in content
+                            content = getattr(it, "content", "") or ""
+                            if content:
+                                # Capture answers from Q: ... A: ... blocks
+                                matches = re.findall(r"Q[:：]\s*(.*?)\n\s*A[:：]\s*(.*?)(?=\n\s*Q[:：]|\Z)", content, flags=re.IGNORECASE | re.DOTALL)
+                                for ques, ans in matches:
+                                    if ans and ans.strip():
+                                        if ques and ques.strip():
+                                            facts.append(f"Q: {ques.strip()} A: {ans.strip()}")
+                                        else:
+                                            facts.append(ans.strip())
+                                # Lines starting with A:
+                                for line in content.splitlines():
+                                    if re.match(r"^\s*A[:：]", line):
+                                        fact = re.sub(r"^\s*A[:：]\s*", "", line).strip()
+                                        if fact:
+                                            facts.append(fact)
+
+                        # Deduplicate while preserving order
+                        if facts:
+                            seen = set()
+                            uniq = []
+                            for f in facts:
+                                key = f.lower()
+                                if key not in seen:
+                                    uniq.append(f)
+                                    seen.add(key)
+                            slide_info.facts = uniq
+                            logging.info(f"Extracted {len(uniq)} facts directly from KB Q&A for slide {idx}")
                 except Exception as e:
                     logging.warning(f"Error loading cached knowledge for slide {idx}: {e}")
 
@@ -193,14 +249,15 @@ def process_presentation_with_storm(
                 logging.error(f"Knowledge retrieval failed for slide {idx}: {e}")
                 slide_info.knowledge_items = []
 
-        # Extract verified facts
-        try:
-            slide_info.facts = knowledge_curator.extract_verified_facts(
-                combined_content, slide_info.queries, slide_info.knowledge_items
-            )
-        except Exception as e:
-            logging.error(f"Error verifying content for slide {idx}: {e}")
-            slide_info.facts = combined_content.split("\n")
+        # Extract verified facts only if not already populated from KB
+        if not slide_info.facts:
+            try:
+                slide_info.facts = knowledge_curator.extract_verified_facts(
+                    combined_content, slide_info.queries, slide_info.knowledge_items
+                )
+            except Exception as e:
+                logging.error(f"Error verifying content for slide {idx}: {e}")
+                slide_info.facts = combined_content.split("\n")
 
         # --------------- Step 2: Transcript Generation ---------------
         try:

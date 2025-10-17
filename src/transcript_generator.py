@@ -7,6 +7,7 @@ import re
 import logging
 from functools import lru_cache
 from typing import List, Optional, Any, Dict
+import re
 
 # Optional semantic similarity support — used only if available
 try:
@@ -159,6 +160,7 @@ class TranscriptGenerator:
         slide_type = "content"
         slide_number = 0
         original_slide_text = ""
+        unpolished_notes = ""
         verified_facts: List[str] = []
         # slide_info is required; support both dict and dataclass
         if isinstance(slide_info, dict):
@@ -166,12 +168,14 @@ class TranscriptGenerator:
             slide_type = slide_info.get("type", slide_type)
             slide_number = slide_info.get("slide_number", slide_number)
             original_slide_text = slide_info.get("original_content", original_slide_text)
+            unpolished_notes = slide_info.get("unpolished_notes", unpolished_notes)
             verified_facts = slide_info.get("facts", []) or []
         else:
             slide_position = getattr(slide_info, "position", slide_position)
             slide_type = getattr(slide_info, "type", slide_type)
             slide_number = getattr(slide_info, "slide_number", slide_number)
             original_slide_text = getattr(slide_info, "original_content", original_slide_text)
+            unpolished_notes = getattr(slide_info, "unpolished_notes", unpolished_notes)
             verified_facts = getattr(slide_info, "facts", []) or []
 
         # Primary text for prompting and checks
@@ -216,6 +220,11 @@ class TranscriptGenerator:
                 "MIDDLE: Do NOT include introductions or conclusions. Continue seamlessly from prior slides and focus only on this slide's points."
             )
 
+        # Optional style reference from notes (trimmed)
+        style_reference = ""
+        if unpolished_notes and len(unpolished_notes.split()) >= 12:
+            style_reference = (" ".join(unpolished_notes.splitlines())).strip()[:600]
+
         prompt = f"""
 SYSTEM: You are a professional presenter and transcript writer.
 Your goal is to create a natural, human-sounding spoken transcript based strictly on the ORIGINAL SLIDE CONTENT.
@@ -239,6 +248,9 @@ SLIDE DETAILS:
 POSITIONAL GUIDANCE:
 {positional_guidance}
 
+STYLE REFERENCE (tone only; do not add facts):
+{style_reference if style_reference else "None"}
+
 SPEAKING STYLE GUIDELINES:
 1. Sound natural and conversational — as if explaining the slide out loud.
 2. Use short sentences, pauses, and connecting words like “so,” “now,” or “let’s look at…”.
@@ -252,6 +264,14 @@ SPEAKING STYLE GUIDELINES:
 7. Avoid robotic or academic phrasing — this is meant for spoken delivery.
 8. Do not use bullet lists or headings; output one continuous spoken paragraph only.
 9. MUST include every verified fact; do not remove any verified content.
+
+NATURAL SPEECH TIPS:
+- Prefer everyday phrasing and contractions (e.g., “we’re”, “it’s”).
+- Vary sentence length; use light rhetorical cues (e.g., “here’s why”, “let’s connect this”).
+- Keep a steady rhythm and clear transitions without sounding like a list.
+
+FACT PRESENTATION RULE:
+If any fact is provided in Q/A form (e.g., "Q: ... A: ..."), include only the answer content in your speech; the question text is for your reference, not to be spoken.
 
 ORIGINAL SLIDE CONTENT:
 {slide_text}
@@ -290,7 +310,12 @@ BEGIN TRANSCRIPT:
             lowered = final_out.lower()
             for fact in verified_facts:
                 # Use a light heuristic: check presence of key tokens from the fact
-                tokens = [t for t in fact.lower().replace("\n", " ").split() if len(t) > 3]
+                # If fact contains Q/A, derive tokens from the answer part only
+                answer_only = fact
+                m = re.search(r"A[:：]\s*(.*)$", fact, flags=re.IGNORECASE | re.DOTALL)
+                if m:
+                    answer_only = m.group(1).strip()
+                tokens = [t for t in answer_only.lower().replace("\n", " ").split() if len(t) > 3]
                 if tokens and not all(t in lowered for t in tokens[: max(1, min(3, len(tokens))) ]):
                     missing.append(fact)
 
@@ -348,6 +373,7 @@ class TranscriptReviewer:
         verified_facts = []
         slide_position = "unknown"
         slide_type = "unknown"
+        unpolished_notes = ""
 
         if slide_info:
             if isinstance(slide_info, dict):
@@ -355,11 +381,13 @@ class TranscriptReviewer:
                 verified_facts = slide_info.get("facts", [])
                 slide_position = slide_info.get("position", slide_position)
                 slide_type = slide_info.get("type", slide_type)
+                unpolished_notes = slide_info.get("unpolished_notes", "")
             else:
                 ground_content = getattr(slide_info, "original_content", "")
                 verified_facts = getattr(slide_info, "facts", [])
                 slide_position = getattr(slide_info, "position", slide_position)
                 slide_type = getattr(slide_info, "type", slide_type)
+                unpolished_notes = getattr(slide_info, "unpolished_notes", "")
 
         facts_text = "\n".join(f"- {f}" for f in verified_facts) if verified_facts else ground_content
 
@@ -392,6 +420,7 @@ TASK:
    - Includes ALL verified facts (do not omit any verified content).
    - Keeps the same sequence as the slide.
    - Obeys the word limits (title/thank-you/content).
+   - Is ONE coherent paragraph with smooth transitions, contractions where natural, and varied sentence length (no bullets or headings).
    - Is ONE coherent paragraph; no bullets, numbering, or headings.
 
 OUTPUT:
@@ -436,6 +465,9 @@ Rewrite the transcript into ONE coherent, natural-sounding spoken paragraph.
 ORIGINAL SLIDE CONTENT:
 {ground_content}
 
+DRAFTED NOTES (tone/style reference only):
+{getattr(slide_info, 'unpolished_notes', '') if slide_info else ''}
+
 DRAFT TO POLISH:
 {revised}
 
@@ -448,6 +480,36 @@ OUTPUT: Single paragraph only.
             except Exception:
                 # keep the existing revised transcript on failure
                 pass
+
+        # Always run a gentle style polish to enhance natural delivery while preserving content
+        try:
+            revised_now = review.get("revised_transcript", revised)
+            style_polish_prompt = f"""
+Polish the transcript into a natural, conversational paragraph suitable for speaking.
+- Use contractions and smooth transitions.
+- Vary sentence length; avoid list-like cadence.
+- Keep facts, ordering, and meaning exactly the same.
+- Do NOT add new facts beyond the ORIGINAL SLIDE CONTENT and VERIFIED FACTS.
+
+ORIGINAL SLIDE CONTENT:
+{ground_content}
+
+VERIFIED FACTS (for coverage; do not list them verbatim):
+{"\n".join(f"- {f}" for f in verified_facts) if verified_facts else "(none)"}
+
+STYLE REFERENCE (tone only):
+{unpolished_notes if unpolished_notes else "(none)"}
+
+DRAFT TO POLISH:
+{revised_now}
+
+OUTPUT: Single coherent paragraph.
+"""
+            polished2 = self.llm_client.generate(style_polish_prompt, self.model).strip()
+            if polished2:
+                review["revised_transcript"] = polished2
+        except Exception:
+            pass
 
         return review
 

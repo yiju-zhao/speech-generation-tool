@@ -269,7 +269,6 @@ def process_presentation_with_storm(
             transcript = transcript_generator.generate_transcript(
                 slide_info,
                 previous_transcripts=context_transcripts,
-                enforce_semantic_check=False,
             )
         except Exception as e:
             logging.error(f"Transcript generation failed: {e}")

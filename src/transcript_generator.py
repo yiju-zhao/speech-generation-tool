@@ -185,18 +185,38 @@ class TranscriptGenerator:
 
         # --- Get minimal technical context (short snippets only) ---
         technical_knowledge = ""
+        # Prefer using knowledge already attached to slide_info (from cached KB)
         rag_items = []
-        if self.knowledge_retriever:
-            # Use the original slide content to derive technical context
+        attached_items = []
+        try:
+            attached_items = getattr(slide_info, "knowledge_items", []) or []
+        except Exception:
+            attached_items = []
+
+        if attached_items:
+            rag_items = attached_items
+        elif self.knowledge_retriever:
+            # Fallback: KB-only retrieval (web disabled in this path)
             basis = slide_text
             rag_items = self.retrieve_technical_knowledge(basis, slide_number)
+
         if rag_items:
             snippets = []
             for item in rag_items[: self.max_rag_items]:
+                # Prefer QA answer if present
+                md = getattr(item, "metadata", {}) or {}
+                qa = md.get("qa") if isinstance(md, dict) else None
+                if isinstance(qa, dict):
+                    ans = qa.get("answer") or qa.get("a")
+                    if isinstance(ans, str) and ans.strip():
+                        s = " ".join(ans.splitlines())[:250].strip()
+                        if s:
+                            snippets.append(s)
+                            continue
                 content = getattr(item, "content", str(item)) or ""
-                # include only a short snippet, single-line
                 s = " ".join(content.splitlines())[:250].strip()
-                snippets.append(s)
+                if s:
+                    snippets.append(s)
             technical_knowledge = " | ".join(snippets)
 
         # --- Build the strict prompt ---
@@ -269,6 +289,16 @@ NATURAL SPEECH TIPS:
 - Prefer everyday phrasing and contractions (e.g., “we’re”, “it’s”).
 - Vary sentence length; use light rhetorical cues (e.g., “here’s why”, “let’s connect this”).
 - Keep a steady rhythm and clear transitions without sounding like a list.
+
+CONFERENCE/MEETING PRESENTER TONE:
+- Confident but approachable; speak to an audience in a room.
+- Use audience anchors like “what this means” or “the key takeaway”.
+- Emphasize implications briefly without inventing new facts.
+
+STORYTELLING FRAMEWORK (without adding facts):
+- Anchor: one short clause that orients the audience to the slide’s focus.
+- Progression: present points in slide order with crisp transitions (“first…”, “then…”, “importantly…”).
+- Takeaway: one short closing clause that reinforces the main point of this slide.
 
 FACT PRESENTATION RULE:
 If any fact is provided in Q/A form (e.g., "Q: ... A: ..."), include only the answer content in your speech; the question text is for your reference, not to be spoken.
@@ -456,11 +486,13 @@ Return a single valid JSON object with keys:
         # Ensure revised transcript is coherent speech, not a fact list
         revised = review.get("revised_transcript", "").strip() or transcript
         if self._looks_list_like(revised):
-            polish_prompt = f"""
+                polish_prompt = f"""
 Rewrite the transcript into ONE coherent, natural-sounding spoken paragraph.
 - No bullets, numbering, or headings.
 - Use smooth transitions; avoid list-like phrasing.
 - Stay strictly grounded in the ORIGINAL SLIDE CONTENT; do not add facts.
+- Aim for a confident conference/meeting presenter tone.
+- Use the storytelling framework: anchor → progression → takeaway.
 
 ORIGINAL SLIDE CONTENT:
 {ground_content}
@@ -490,6 +522,8 @@ Polish the transcript into a natural, conversational paragraph suitable for spea
 - Vary sentence length; avoid list-like cadence.
 - Keep facts, ordering, and meaning exactly the same.
 - Do NOT add new facts beyond the ORIGINAL SLIDE CONTENT and VERIFIED FACTS.
+- Aim for a confident conference/meeting presenter tone.
+- Use the storytelling framework: brief anchor → ordered progression → one-sentence takeaway.
 
 ORIGINAL SLIDE CONTENT:
 {ground_content}

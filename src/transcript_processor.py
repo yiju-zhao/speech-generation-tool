@@ -159,7 +159,7 @@ def process_presentation_with_storm(
             type=slide_type,
         )
 
-        # --------------- Step 1: Knowledge Curation ---------------
+        # --------------- Step 1: Knowledge Curation (use cache if present, else retrieve) ---------------
         slide_kb_path = None
         cached_items = []
         if knowledge_base_dir:
@@ -173,11 +173,10 @@ def process_presentation_with_storm(
                         from .knowledge_base import KnowledgeItem
                         slide_info.knowledge_items = [KnowledgeItem.from_dict(d) for d in cached_items]
 
-                        # Attempt to extract QA pairs directly from KB without LLM
+                        # Extract QA pairs from cached KB items directly
                         facts = []
                         for it in slide_info.knowledge_items:
                             md = getattr(it, "metadata", {}) or {}
-                            # Structured QA in metadata
                             qa = md.get("qa")
                             if isinstance(qa, dict):
                                 q = qa.get("question") or qa.get("q") or ""
@@ -198,10 +197,8 @@ def process_presentation_with_storm(
                                         facts.append(a.strip())
                                     continue
 
-                            # Parse inline Q/A patterns in content
                             content = getattr(it, "content", "") or ""
                             if content:
-                                # Capture answers from Q: ... A: ... blocks
                                 matches = re.findall(r"Q[:：]\s*(.*?)\n\s*A[:：]\s*(.*?)(?=\n\s*Q[:：]|\Z)", content, flags=re.IGNORECASE | re.DOTALL)
                                 for ques, ans in matches:
                                     if ans and ans.strip():
@@ -209,14 +206,12 @@ def process_presentation_with_storm(
                                             facts.append(f"Q: {ques.strip()} A: {ans.strip()}")
                                         else:
                                             facts.append(ans.strip())
-                                # Lines starting with A:
                                 for line in content.splitlines():
                                     if re.match(r"^\s*A[:：]", line):
                                         fact = re.sub(r"^\s*A[:：]\s*", "", line).strip()
                                         if fact:
                                             facts.append(fact)
 
-                        # Deduplicate while preserving order
                         if facts:
                             seen = set()
                             uniq = []
@@ -226,11 +221,11 @@ def process_presentation_with_storm(
                                     uniq.append(f)
                                     seen.add(key)
                             slide_info.facts = uniq
-                            logging.info(f"Extracted {len(uniq)} facts directly from KB Q&A for slide {idx}")
+                            logging.info(f"Extracted {len(uniq)} QA-derived facts from cached KB for slide {idx}")
                 except Exception as e:
                     logging.warning(f"Error loading cached knowledge for slide {idx}: {e}")
 
-        # If no cached knowledge, perform new retrieval
+        # If no cached knowledge for this slide, perform new retrieval (may use Tavily if enabled)
         if not cached_items:
             try:
                 logging.info(f"Generating search queries for slide {idx}")

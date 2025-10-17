@@ -7,14 +7,6 @@ import re
 import logging
 from functools import lru_cache
 from typing import List, Optional, Any, Dict
-import re
-
-# Optional semantic similarity support — used only if available
-try:
-    from sentence_transformers import SentenceTransformer, util as st_util
-    _SEM_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
-except Exception:
-    _SEM_MODEL = None
 
 # Module-level logger only; configuration is owned by the caller/processor
 logger = logging.getLogger(__name__)
@@ -127,32 +119,14 @@ class TranscriptGenerator:
             logger.warning(f"Knowledge retrieval failed: {e}")
             return []
 
-    # ---------- Semantic pre-check (optional) ----------
-    def semantic_similarity(self, a: str, b: str) -> Optional[float]:
-        """Return cosine similarity between a and b if sentence-transformers available; else None."""
-        if not _SEM_MODEL:
-            return None
-        try:
-            a_vec = _SEM_MODEL.encode(a, convert_to_tensor=True)
-            b_vec = _SEM_MODEL.encode(b, convert_to_tensor=True)
-            sim = st_util.cos_sim(a_vec, b_vec).item()
-            return float(sim)
-        except Exception as e:
-            logger.debug(f"Semantic similarity failed: {e}")
-            return None
-
     # ---------- Transcript generation ----------
     def generate_transcript(
         self,
         slide_info: Any,
         previous_transcripts: Optional[List[str]] = None,
-        enforce_semantic_check: bool = False,
     ) -> str:
         """
         Generate a TTS-ready transcript anchored to the original slide content.
-
-        enforce_semantic_check: if True and sentence-transformers is available, we will check
-        that the generated transcript is semantically close to the slide before returning.
         """
 
         # --- Gather slide metadata ---
@@ -300,6 +274,12 @@ STORYTELLING FRAMEWORK (without adding facts):
 - Progression: present points in slide order with crisp transitions (“first…”, “then…”, “importantly…”).
 - Takeaway: one short closing clause that reinforces the main point of this slide.
 
+AUDIENCE-FOCUSED CLARITY (no new facts):
+- Understand first, then simplify phrasing while keeping technical precision.
+- If the slide defines a term or acronym, use that definition once; otherwise, keep the slide’s wording.
+- When a concept is dense, break it into 2–3 small steps with connecting phrases.
+- If the slide signals importance (e.g., “key”, “critical”, “main”), echo that as the one-sentence takeaway.
+
 FACT PRESENTATION RULE:
 If any fact is provided in Q/A form (e.g., "Q: ... A: ..."), include only the answer content in your speech; the question text is for your reference, not to be spoken.
 
@@ -316,22 +296,6 @@ BEGIN TRANSCRIPT:
 
         # LLM generation
         raw_out = self.llm_client.generate(prompt, self.model)
-
-        # Optional semantic check
-        if enforce_semantic_check and _SEM_MODEL:
-            sim = self.semantic_similarity(slide_text, raw_out)
-            if sim is not None and sim < 0.55:
-                logger.warning(f"Low semantic similarity ({sim:.2f}) between slide and transcript.")
-                # Slight repair prompt: ask LLM to strictly reduce to slide content only
-                repair_prompt = f"""
-You produced a transcript that is semantically distant from the slide content (similarity={sim:.2f}).
-Please re-generate a transcript that STRICTLY uses only the ORIGINAL SLIDE CONTENT below, follows the same order, and obeys previous rules.
-ORIGINAL SLIDE CONTENT:
-{slide_text}
-BEGIN TRANSCRIPT:
-"""
-                raw_out = self.llm_client.generate(repair_prompt, self.model)
-
         final_out = raw_out.strip()
 
         # Coverage pass: ensure all verified facts are present (simple containment heuristic)
@@ -382,14 +346,14 @@ class TranscriptReviewer:
         self.model = model
         self.strict_mode = strict_mode
 
-    def _safe_json_parse(self, text: str) -> Dict:
+    def _safe_json_parse(self, text: str) -> Dict[str, Any]:
         try:
             return json.loads(text)
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse reviewer LLM JSON output: {e}")
             return {}
 
-    def review_transcript(self, slide_info: Any, transcript: str) -> Dict:
+    def review_transcript(self, slide_info: Any, transcript: str) -> Dict[str, Any]:
         """
         Returns a JSON-like dict with fields:
           - assessment: {is_factually_accurate, follows_slide_order, is_presentation_ready}
@@ -451,7 +415,6 @@ TASK:
    - Keeps the same sequence as the slide.
    - Obeys the word limits (title/thank-you/content).
    - Is ONE coherent paragraph with smooth transitions, contractions where natural, and varied sentence length (no bullets or headings).
-   - Is ONE coherent paragraph; no bullets, numbering, or headings.
 
 OUTPUT:
 Return a single valid JSON object with keys:
@@ -486,13 +449,14 @@ Return a single valid JSON object with keys:
         # Ensure revised transcript is coherent speech, not a fact list
         revised = review.get("revised_transcript", "").strip() or transcript
         if self._looks_list_like(revised):
-                polish_prompt = f"""
+            polish_prompt = f"""
 Rewrite the transcript into ONE coherent, natural-sounding spoken paragraph.
 - No bullets, numbering, or headings.
 - Use smooth transitions; avoid list-like phrasing.
 - Stay strictly grounded in the ORIGINAL SLIDE CONTENT; do not add facts.
 - Aim for a confident conference/meeting presenter tone.
 - Use the storytelling framework: anchor → progression → takeaway.
+- Prioritize audience understanding: simplify phrasing, keep precision, and make the takeaway explicit.
 
 ORIGINAL SLIDE CONTENT:
 {ground_content}
@@ -524,6 +488,7 @@ Polish the transcript into a natural, conversational paragraph suitable for spea
 - Do NOT add new facts beyond the ORIGINAL SLIDE CONTENT and VERIFIED FACTS.
 - Aim for a confident conference/meeting presenter tone.
 - Use the storytelling framework: brief anchor → ordered progression → one-sentence takeaway.
+- Prioritize audience understanding: clarify terms using slide wording, simplify phrasing, and make the final takeaway explicit.
 
 ORIGINAL SLIDE CONTENT:
 {ground_content}
